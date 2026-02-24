@@ -483,16 +483,15 @@ def get_country_flag(country: str) -> str:
 
 
 def get_welcome_text(first_name: str, balance: Decimal) -> str:
-    """Generate personalized welcome text with user's name and balance."""
+    """Generate store welcome text with user balance for the bot."""
     return (
-        f'<tg-emoji emoji-id="5456140674028019486">✨</tg-emoji> <b>Hey {first_name}! Ready to explore?</b> <tg-emoji emoji-id="5438496463044752972">✨</tg-emoji>\n\n'
-        f'<tg-emoji emoji-id="5409048419211682843">💰</tg-emoji> <b>Your Balance:</b> ${balance:.2f} USDT\n\n'
-        f'<tg-emoji emoji-id="5217712513847676489">🎯</tg-emoji> What are you in the mood for today?\n'
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="5424972470023104089">🔥</tg-emoji> <b>Premium Accounts</b> • Instant OTPs\n'
-        f'<tg-emoji emoji-id="5411590687663608498">⚡</tg-emoji> <b>Lightning Fast</b> • Auto Delivery\n'
-        f'<tg-emoji emoji-id="5251203410396458957">🛡️</tg-emoji> <b>24/7 Support</b> • Secure Payments\n'
-        f"━━━━━━━━━━━━━━━━━━━━━"
+        f'<tg-emoji emoji-id="5904734666472037015">👋</tg-emoji> <b>Welcome to @aged_robot !</b>\n\n'
+        f'Looking for a premium username or anonymous phone number? You\'re in the right place! <tg-emoji emoji-id="5904552873391298537">🔥</tg-emoji>\n\n'
+        f'— Rent top-quality usernames and numbers instantly for business, personal branding, or fun.\n\n'
+        f'— Instant rental with automatic activation — no waiting, no hassle.\n\n'
+        f'<tg-emoji emoji-id="5893385739378366779">📲</tg-emoji> Use the menu below to get started. Make sure to add everything very carefully.\n\n'
+        f'━━━━━━━━━━━━━━━━━━━━━\n'
+        f'<tg-emoji emoji-id="5409048419211682843">💰</tg-emoji> <b>Your Balance:</b> ${balance:.2f} USDT'
     )
 
 
@@ -5700,6 +5699,7 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
     if p.latest_otp:
         otp_line = f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>OTP Received:</b> <code>{p.latest_otp}</code>"
         kb_rows = [
+            [apply_button_style(InlineKeyboardButton(text="Get OTP Again", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
         ]
     else:
