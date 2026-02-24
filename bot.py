@@ -69,6 +69,7 @@ BNB_CONFIRMATION_WAIT_SECONDS = 5
 REFERRAL_COMMISSION_PCT = 1.5
 SUPPORT_USERNAME = "jashanxjagy"  # Without @ prefix (added in URLs)
 LOG_CHANNEL = ""  # Add your channel username here (without @), e.g. "mychannel"
+FORCE_JOIN_CHANNEL = "agednews"  # Channel users must join before using the bot (without @)
 GIFT_CODE_BYTES = 8  # Number of random bytes used to generate gift codes (8 bytes = 16-char hex code)
 DATABASE_URL = "sqlite+aiosqlite:///marketplace.db"
 BLOCKCHAIN_STATE_FILE = "blockchain_state.json"
@@ -485,14 +486,34 @@ def get_country_flag(country: str) -> str:
 def get_welcome_text(first_name: str, balance: Decimal) -> str:
     """Generate store welcome text with user balance for the bot."""
     return (
-        f'<tg-emoji emoji-id="5904734666472037015">👋</tg-emoji> <b>Welcome to @aged_robot !</b>\n\n'
-        f'Looking for a premium username or anonymous phone number? You\'re in the right place! <tg-emoji emoji-id="5904552873391298537">🔥</tg-emoji>\n\n'
-        f'— Rent top-quality usernames and numbers instantly for business, personal branding, or fun.\n\n'
-        f'— Instant rental with automatic activation — no waiting, no hassle.\n\n'
-        f'<tg-emoji emoji-id="5893385739378366779">📲</tg-emoji> Use the menu below to get started. Make sure to add everything very carefully.\n\n'
+        f'<tg-emoji emoji-id="5343984088493599366">✨</tg-emoji> <b>Welcome to @aged_robot</b>\n\n'
+        f'<tg-emoji emoji-id="5987708392339150189">💎</tg-emoji> Premium Telegram accounts, sessions &amp; numbers — ready to use.\n\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> Instant delivery\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> No waiting\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> No hassle\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> Made For ADDS\n\n'
+        f'<tg-emoji emoji-id="5458603043203327669">📢</tg-emoji> Updates : @Agednews\n'
+        f'<tg-emoji emoji-id="5253742260054409879">📲</tg-emoji> DM : @Agedowner\n\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'<tg-emoji emoji-id="5409048419211682843">💰</tg-emoji> <b>Your Balance:</b> ${balance:.2f} USDT'
     )
+
+
+async def check_channel_member(bot: Bot, user_id: int) -> bool:
+    """Return True if user_id is a member/admin/creator of FORCE_JOIN_CHANNEL."""
+    try:
+        member = await bot.get_chat_member(f"@{FORCE_JOIN_CHANNEL}", user_id)
+        return member.status.value in ("member", "administrator", "creator")
+    except TelegramAPIError:
+        return False
+
+
+def build_force_join_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard shown to users who have not yet joined the required channel."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Join Channel", url=f"https://t.me/{FORCE_JOIN_CHANNEL}")],
+        [apply_button_style(InlineKeyboardButton(text="✅ I Joined", callback_data="check_joined"), 'primary', "5900086068748752426")],
+    ])
 
 
 def get_help_text() -> str:
@@ -1105,8 +1126,52 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         first_name = user.first_name or message.from_user.first_name or "User"
 
     is_admin = message.from_user.id in ADMIN_IDS
+
+    # Force-join check
+    if not is_admin and not await check_channel_member(message.bot, message.from_user.id):
+        await message.answer(
+            f'<tg-emoji emoji-id="5458603043203327669">📢</tg-emoji> <b>Join Required</b>\n\n'
+            f'You must join our updates channel before using the bot.\n\n'
+            f'👉 Join <a href="https://t.me/{FORCE_JOIN_CHANNEL}">@{FORCE_JOIN_CHANNEL}</a> then tap <b>✅ I Joined</b> below.',
+            reply_markup=build_force_join_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
     welcome_text = get_welcome_text(first_name, balance)
     await message.answer(
+        welcome_text,
+        reply_markup=build_main_keyboard(is_admin),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "check_joined")
+async def cb_check_joined(query: CallbackQuery) -> None:
+    """Handle 'I Joined' button — verify channel membership and show main menu."""
+    user_id = query.from_user.id
+    is_admin = user_id in ADMIN_IDS
+
+    if not is_admin and not await check_channel_member(query.bot, user_id):
+        await query.answer(
+            "❌ You haven't joined the channel yet. Please join and try again.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(
+            session,
+            user_id,
+            query.from_user.username,
+            first_name=query.from_user.first_name or "User",
+        )
+        balance = Decimal(str(user.balance or 0))
+        first_name = user.first_name or query.from_user.first_name or "User"
+
+    welcome_text = get_welcome_text(first_name, balance)
+    await query.message.edit_text(
         welcome_text,
         reply_markup=build_main_keyboard(is_admin),
         parse_mode=ParseMode.HTML,
