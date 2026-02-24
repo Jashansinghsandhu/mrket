@@ -3049,17 +3049,23 @@ async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
             )
         )
 
-        # Update transaction to Completed
-        await session.execute(
-            update(Transaction)
+        # Update the most recent matching pending transaction to Completed
+        _txn_res = await session.execute(
+            select(Transaction)
             .where(
                 Transaction.user_id == prem_order.user_id,
                 Transaction.type == "Purchase",
                 Transaction.status == "Pending",
                 Transaction.amount == prem_order.price,
             )
-            .values(status="Completed")
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
         )
+        _latest_txn = _txn_res.scalar_one_or_none()
+        if _latest_txn:
+            await session.execute(
+                update(Transaction).where(Transaction.id == _latest_txn.id).values(status="Completed")
+            )
 
         await session.commit()
         buyer_id = prem_order.user_id
@@ -3132,17 +3138,23 @@ async def cb_prem_admin_decline(query: CallbackQuery) -> None:
         await session.execute(
             update(User).where(User.id == buyer_id).values(balance=User.balance + price)
         )
-        # Update transaction
-        await session.execute(
-            update(Transaction)
+        # Update the most recent matching pending transaction to Refunded
+        _txn_res = await session.execute(
+            select(Transaction)
             .where(
                 Transaction.user_id == buyer_id,
                 Transaction.type == "Purchase",
                 Transaction.status == "Pending",
                 Transaction.amount == price,
             )
-            .values(status="Refunded")
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
         )
+        _latest_txn = _txn_res.scalar_one_or_none()
+        if _latest_txn:
+            await session.execute(
+                update(Transaction).where(Transaction.id == _latest_txn.id).values(status="Refunded")
+            )
         await session.commit()
 
     # Notify user
@@ -4096,6 +4108,10 @@ async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     session_str = data.get("session_string", "")
+    if not session_str:
+        await message.answer("❌ Session string is missing. Please restart the add number flow.")
+        await state.clear()
+        return
     category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
     category_name = PRODUCT_CATEGORIES.get(category)
     if category_name is None:
