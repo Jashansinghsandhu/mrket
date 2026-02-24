@@ -4,13 +4,13 @@ Telegram Marketplace Bot
 A production-ready Telegram Bot Marketplace for purchasing virtual numbers
 (Telegram accounts, sessions, WhatsApp SMS). Includes a user storefront, 
 admin panel, referral system, OxaPay crypto payment gateway, and
-fully automated OTP delivery via pre-registered Pyrogram session strings.
+fully automated OTP delivery via pre-registered Telethon session files.
 
 HOW TO RUN:
     pip install aiogram==3.25.0 web3==6.20.3 "qrcode[pil]==7.4.2" \
                 sqlalchemy==2.0.36 eth-account==0.11.3 pillow==12.1.1 \
                 aiohttp==3.13.3 cryptography aiosqlite \
-                pyrogram tgcrypto
+                telethon
     python bot.py
 
 SETUP GUIDE:
@@ -18,11 +18,9 @@ SETUP GUIDE:
     2. Set ADMIN_IDS to your Telegram user ID(s).
     3. Set TELEGRAM_API_ID and TELEGRAM_API_HASH from https://my.telegram.org.
     4. Set OXAPAY_API_KEY from your OxaPay merchant dashboard.
-    5. Generate Pyrogram session strings for your phone numbers using
-       the included generate_session.py script:
-           python generate_session.py
-    6. In the Admin Panel, use "➕ Add Number" and paste the session string
-       when prompted.  The bot handles OTP delivery automatically.
+    5. Upload Telethon .session files via the Admin Panel ingestion bot.
+    6. In the Admin Panel, use "➕ Add Number" to add the session.
+       The bot handles OTP delivery automatically.
 
 DATA PERSISTENCE:
     All user, product, order, and transaction data is stored in
@@ -214,20 +212,20 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  PYROGRAM AVAILABILITY CHECK
+#  TELETHON AVAILABILITY CHECK
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
-    from pyrogram import Client as PyroClient
-    from pyrogram import errors as pyro_errors
+    from telethon import TelegramClient
+    import telethon.functions.account as tl_account_functions
 
-    PYROGRAM_AVAILABLE = True
-    log.info("Pyrogram loaded successfully.")
+    TELETHON_AVAILABLE = True
+    log.info("Telethon loaded successfully.")
 except ImportError:
-    PYROGRAM_AVAILABLE = False
+    TELETHON_AVAILABLE = False
     log.warning(
-        "pyrogram/tgcrypto not installed – OTP fetching will be unavailable. "
-        "Run: pip install pyrogram tgcrypto"
+        "telethon not installed – OTP fetching will be unavailable. "
+        "Run: pip install telethon"
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -778,7 +776,7 @@ def build_main_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────────
 #
 #  Architecture:
-#    • OTPSessionManager – singleton that manages Pyrogram client lifecycle.
+#    • OTPSessionManager – singleton that manages Telethon client lifecycle.
 #      Each product that is sold gets a dedicated client that stays alive.
 #    • On purchase, a persistent listener is started that runs for 30 min.
 #    • On "Get OTP" press, if no fresh OTP is in the DB, we do an active
@@ -787,7 +785,7 @@ def build_main_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
 #      so the user always gets the freshest code.
 #
 #  Why this is better:
-#    1. The Pyrogram client is started ONCE and reused – no repeated
+#    1. The Telethon client is started ONCE and reused – no repeated
 #       connect/disconnect per OTP request.
 #    2. The on-demand scan acts as a reliable fallback when the live listener
 #       misses a message (race condition / slow connect).
@@ -803,7 +801,7 @@ _LISTENER_LIFETIME = 30 * 60       # 30 minutes
 
 class OTPSessionManager:
     """
-    Manages one Pyrogram client per product.
+    Manages one Telethon client per product.
     Provides:
       - start_listener(product_id, session_file_data)  → background live listener
       - fetch_otp_now(product_id, session_file_data)    → on-demand history scan
@@ -814,8 +812,8 @@ class OTPSessionManager:
     """
 
     def __init__(self):
-        # product_id → PyroClient (connected)
-        self._clients: dict[int, "PyroClient"] = {}
+        # product_id → TelegramClient (connected)
+        self._clients: dict[int, "TelegramClient"] = {}
         # product_id → asyncio.Task (the listener coroutine)
         self._tasks: dict[int, asyncio.Task] = {}
         # Lock per product to avoid duplicate client starts
@@ -845,10 +843,10 @@ class OTPSessionManager:
 
     async def _get_or_create_client(
         self, product_id: int, session_file_data: bytes
-    ) -> Optional["PyroClient"]:
-        """Return a connected Pyrogram client, creating one if needed."""
-        if not PYROGRAM_AVAILABLE:
-            log.error("[OTP %s] Pyrogram not installed", product_id)
+    ) -> Optional["TelegramClient"]:
+        """Return a connected Telethon client, creating one if needed."""
+        if not TELETHON_AVAILABLE:
+            log.error("[OTP %s] Telethon not installed", product_id)
             return None
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             log.error("[OTP %s] TELEGRAM_API_ID / TELEGRAM_API_HASH not set", product_id)
@@ -862,7 +860,7 @@ class OTPSessionManager:
             existing = self._clients.get(product_id)
             if existing is not None:
                 try:
-                    if existing.is_connected:
+                    if existing.is_connected():
                         return existing
                 except Exception:
                     pass
@@ -881,30 +879,32 @@ class OTPSessionManager:
                 return None
             self._temp_files[product_id] = tmp_path
 
-            client = PyroClient(
-                name=f"temp_otp_{product_id}",
-                api_id=TELEGRAM_API_ID,
-                api_hash=TELEGRAM_API_HASH,
-                no_updates=False,
+            # Telethon resolves the session file by appending .session to the stem
+            client = TelegramClient(
+                f"temp_otp_{product_id}",
+                TELEGRAM_API_ID,
+                TELEGRAM_API_HASH,
             )
 
             try:
-                log.info("[OTP %s] Connecting Pyrogram client…", product_id)
-                await client.start()
+                log.info("[OTP %s] Connecting Telethon client…", product_id)
+                await client.connect()
                 me = await client.get_me()
                 log.info(
                     "[OTP %s] Connected as %s (%s)",
-                    product_id, me.phone_number, me.first_name,
+                    product_id,
+                    getattr(me, "phone", "unknown"),
+                    getattr(me, "first_name", ""),
                 )
                 self._clients[product_id] = client
                 return client
             except Exception as exc:
                 log.error(
-                    "[OTP %s] Failed to start Pyrogram client: %s\n%s",
+                    "[OTP %s] Failed to start Telethon client: %s\n%s",
                     product_id, exc, traceback.format_exc(),
                 )
                 try:
-                    await client.stop()
+                    await client.disconnect()
                 except Exception:
                     pass
                 self._cleanup_temp_file(product_id)
@@ -914,7 +914,7 @@ class OTPSessionManager:
         client = self._clients.pop(product_id, None)
         if client is not None:
             try:
-                await client.stop()
+                await client.disconnect()
                 log.info("[OTP %s] Client stopped", product_id)
             except Exception as exc:
                 log.warning("[OTP %s] Error stopping client: %s", product_id, exc)
@@ -926,7 +926,7 @@ class OTPSessionManager:
 
     async def start_listener(self, product_id: int, session_file_data: bytes) -> None:
         """
-        Spawn a background task that keeps a Pyrogram client alive and
+        Spawn a background task that keeps a Telethon client alive and
         watches for OTP messages from 777000 for up to _LISTENER_LIFETIME.
         """
         # Cancel any previous listener for this product
@@ -954,7 +954,7 @@ class OTPSessionManager:
           2. Do an immediate history scan to capture any OTP that arrived
              before we connected (covers the race window).
           3. Then poll the history every 5 seconds for _LISTENER_LIFETIME.
-             (Polling is far more reliable than Pyrogram's on_message handler
+             (Polling is far more reliable than Telethon's on_message handler
               because it doesn't depend on update ordering or gaps.)
         """
         client = await self._get_or_create_client(product_id, session_file_data)
@@ -968,7 +968,7 @@ class OTPSessionManager:
         while asyncio.get_running_loop().time() < end_time:
             await asyncio.sleep(5)
             try:
-                if not client.is_connected:
+                if not client.is_connected():
                     log.warning("[OTP %s] Client disconnected mid-listen, reconnecting…", product_id)
                     client = await self._get_or_create_client(product_id, session_file_data)
                     if client is None:
@@ -982,7 +982,7 @@ class OTPSessionManager:
         log.info("[OTP %s] Listener lifetime expired – cleaning up", product_id)
         await self._stop_client(product_id)
 
-    async def _scan_and_store(self, product_id: int, client: "PyroClient") -> Optional[str]:
+    async def _scan_and_store(self, product_id: int, client: "TelegramClient") -> Optional[str]:
         """
         Scan the last 10 messages from chat 777000, find the newest 5-digit
         code, and store it in the DB if it's newer than what we have.
@@ -992,13 +992,14 @@ class OTPSessionManager:
         best_date: Optional[datetime] = None
 
         try:
-            async for msg in client.get_chat_history(_TELEGRAM_SERVICE_CHAT_ID, limit=10):
+            messages = await client.get_messages(_TELEGRAM_SERVICE_CHAT_ID, limit=10)
+            for msg in messages:
                 if not msg.text:
                     continue
                 match = _OTP_PATTERN.search(msg.text)
                 if match:
                     code = match.group(1)
-                    msg_date = msg.date  # already a datetime object (UTC)
+                    msg_date = msg.date  # Telethon returns UTC-aware datetime
                     if msg_date.tzinfo is None:
                         msg_date = msg_date.replace(tzinfo=timezone.utc)
                     if best_date is None or msg_date > best_date:
@@ -1057,8 +1058,8 @@ class OTPSessionManager:
         Returns (otp_code_or_None, status_message).
         status_message is a human-readable explanation for the UI.
         """
-        if not PYROGRAM_AVAILABLE:
-            return None, "Pyrogram is not installed on the server."
+        if not TELETHON_AVAILABLE:
+            return None, "Telethon is not installed on the server."
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             return None, "Telegram API credentials are not configured."
         if not session_file_data:
@@ -1094,7 +1095,7 @@ class OTPSessionManager:
     # ── Shutdown ──────────────────────────────────────────────────────────
 
     async def stop_product(self, product_id: int) -> None:
-        """Cancel any listener task and stop the Pyrogram client for a product."""
+        """Cancel any listener task and stop the Telethon client for a product."""
         old_task = self._tasks.pop(product_id, None)
         if old_task and not old_task.done():
             old_task.cancel()
@@ -3358,7 +3359,7 @@ async def fsm_prem_fulfill_phone(message: Message, state: FSMContext) -> None:
     await state.update_data(prem_phone=message.text.strip())
     await state.set_state(AdminFulfillPremiumOrder.session_string)
     await message.answer(
-        "Now paste the <b>Pyrogram session string</b>:",
+        "Now paste the <b>Telethon session string</b>:",
         parse_mode=ParseMode.HTML,
     )
 
@@ -4464,7 +4465,7 @@ async def fsm_add_price(message: Message, state: FSMContext) -> None:
     else:
         await state.set_state(AdminAddNumber.session_string)
         await message.answer(
-            "Step 5/5: Paste the <b>Pyrogram Session String</b> for this number\n"
+            "Step 5/5: Paste the <b>Telethon Session String</b> for this number\n"
             "(generate it with <code>generate_session.py</code>):",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
@@ -6468,33 +6469,32 @@ async def check_2fa_with_session_file(phone: str, session_bytes: bytes) -> bool:
     """Return True if the Telegram account has 2FA enabled.
 
     Writes the session bytes to a uniquely named temporary file, starts a
-    Pyrogram Client from it, and queries the raw GetPassword RPC.  The temp
+    Telethon TelegramClient from it, and queries the GetPassword RPC.  The temp
     file (and any SQLite WAL/SHM companions) is deleted afterwards.
-    Returns False on any error or when Pyrogram is not installed.
+    Returns False on any error or when Telethon is not installed.
     """
-    if not PYROGRAM_AVAILABLE:
+    if not TELETHON_AVAILABLE:
         return False
     # Use a UUID-based name so concurrent checks for different phones
     # never collide and the path is not guessable.
     tmp_stem = f"temp_admin_check_{uuid.uuid4().hex}"
     tmp_path = f"{tmp_stem}.session"
+    client = TelegramClient(tmp_stem, TELEGRAM_API_ID, TELEGRAM_API_HASH)
     try:
         with open(tmp_path, "wb") as f:
             f.write(session_bytes)
-        from pyrogram.raw.functions.account import GetPassword  # type: ignore
-        async with PyroClient(
-            name=tmp_stem,
-            api_id=TELEGRAM_API_ID,
-            api_hash=TELEGRAM_API_HASH,
-            no_updates=True,
-        ) as client:
-            pwd = await client.invoke(GetPassword())
-            return bool(pwd.has_password)
+        await client.connect()
+        pwd = await client(tl_account_functions.GetPasswordRequest())
+        return bool(pwd.has_password)
     except Exception as exc:
-        log.warning("2FA check via Pyrogram failed for %s: %s", phone, exc)
+        log.warning("2FA check via Telethon failed for %s: %s", phone, exc)
         return False
     finally:
-        for suffix in ("", "-wal", "-shm"):
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        for suffix in ("", "-wal", "-shm", "-journal"):
             path = tmp_path + suffix
             try:
                 if os.path.exists(path):
