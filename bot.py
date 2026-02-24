@@ -1054,6 +1054,24 @@ class AdminFulfillPremiumOrder(StatesGroup):
 #  ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 
+def admin_only(func):
+    @functools.wraps(func)
+    async def wrapper(event, *args, **kwargs):
+        uid = (
+            event.from_user.id
+            if isinstance(event, (Message, CallbackQuery))
+            else None
+        )
+        if uid not in ADMIN_IDS:
+            if isinstance(event, CallbackQuery):
+                await event.answer("⛔ Unauthorized", show_alert=True)
+            elif isinstance(event, Message):
+                await event.answer("⛔ Unauthorized.")
+            return
+        return await func(event, *args, **kwargs)
+    return wrapper
+
+
 router = Router()
 
 
@@ -3647,24 +3665,6 @@ async def cb_referral(query: CallbackQuery) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 #  ADMIN PANEL
 # ─────────────────────────────────────────────────────────────────────────────
-
-def admin_only(func):
-    @functools.wraps(func)
-    async def wrapper(event, *args, **kwargs):
-        uid = (
-            event.from_user.id
-            if isinstance(event, (Message, CallbackQuery))
-            else None
-        )
-        if uid not in ADMIN_IDS:
-            if isinstance(event, CallbackQuery):
-                await event.answer("⛔ Unauthorized", show_alert=True)
-            elif isinstance(event, Message):
-                await event.answer("⛔ Unauthorized.")
-            return
-        return await func(event, *args, **kwargs)
-    return wrapper
-
 
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
