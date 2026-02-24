@@ -869,15 +869,16 @@ class OTPSessionManager:
                 # Dead client – remove and recreate
                 await self._stop_client(product_id)
 
-            # Write session bytes to a temp file (only if not already present)
+            # Write session bytes to a temp file.
+            # The per-product lock above ensures only one coroutine reaches
+            # this point for a given product_id at a time.
             tmp_path = f"temp_otp_{product_id}.session"
-            if not os.path.exists(tmp_path):
-                try:
-                    with open(tmp_path, "wb") as f:
-                        f.write(session_file_data)
-                except Exception as exc:
-                    log.error("[OTP %s] Failed to write temp session file: %s", product_id, exc)
-                    return None
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(session_file_data)
+            except Exception as exc:
+                log.error("[OTP %s] Failed to write temp session file: %s", product_id, exc)
+                return None
             self._temp_files[product_id] = tmp_path
 
             client = PyroClient(
@@ -6466,19 +6467,23 @@ admin_router = Router()
 async def check_2fa_with_session_file(phone: str, session_bytes: bytes) -> bool:
     """Return True if the Telegram account has 2FA enabled.
 
-    Writes the session bytes to a temporary file, starts a Pyrogram Client
-    from it, and queries the raw GetPassword RPC.  The temp file is deleted
-    afterwards.  Returns False on any error or when Pyrogram is not installed.
+    Writes the session bytes to a uniquely named temporary file, starts a
+    Pyrogram Client from it, and queries the raw GetPassword RPC.  The temp
+    file (and any SQLite WAL/SHM companions) is deleted afterwards.
+    Returns False on any error or when Pyrogram is not installed.
     """
     if not PYROGRAM_AVAILABLE:
         return False
-    tmp_path = f"temp_admin_check_{phone}.session"
+    # Use a UUID-based name so concurrent checks for different phones
+    # never collide and the path is not guessable.
+    tmp_stem = f"temp_admin_check_{uuid.uuid4().hex}"
+    tmp_path = f"{tmp_stem}.session"
     try:
         with open(tmp_path, "wb") as f:
             f.write(session_bytes)
         from pyrogram.raw.functions.account import GetPassword  # type: ignore
         async with PyroClient(
-            name=f"temp_admin_check_{phone}",
+            name=tmp_stem,
             api_id=TELEGRAM_API_ID,
             api_hash=TELEGRAM_API_HASH,
             no_updates=True,
@@ -6733,9 +6738,9 @@ async def admin_ingest_2fa_password(message: Message, state: FSMContext) -> None
     summary_lines: list[str] = []
     for item in account_data:
         # Only apply 2FA password to accounts that actually have 2FA enabled
-        effective_twofa = twofa_enc if item["has_2fa"] else None
+        effective_twofa_enc = twofa_enc if item["has_2fa"] else None
         added, lines = await _ingest_dual_records(
-            item["phone"], item["bytes"], effective_twofa, default_price, item["country"]
+            item["phone"], item["bytes"], effective_twofa_enc, default_price, item["country"]
         )
         total_added += added
         summary_lines.extend(lines)
