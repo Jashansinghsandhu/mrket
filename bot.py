@@ -1227,7 +1227,12 @@ async def cb_check_stock(query: CallbackQuery) -> None:
         )
         stock_data = rows.fetchall()
 
-    if not stock_data:
+        prem_rows = await session.execute(
+            select(PremiumCountry).order_by(PremiumCountry.country)
+        )
+        prem_countries = prem_rows.scalars().all()
+
+    if not stock_data and not prem_countries:
         await query.message.edit_text(
             "<tg-emoji emoji-id=\"5406683434124859552\">📦</tg-emoji> <b>Current Stock</b>\n\n"
             "😔 No numbers available right now.\n"
@@ -1252,6 +1257,15 @@ async def cb_check_stock(query: CallbackQuery) -> None:
             current_cat = category
         flag = get_country_flag(country)
         lines.append(f"  {flag} {country.title()} — {qty} available @ <b>${price:.2f}</b>/each")
+
+    if prem_countries:
+        if current_cat is not None:
+            lines.append("")
+        prem_cat_name = PRODUCT_CATEGORIES.get(CATEGORY_TELEGRAM_PREMIUM, "⭐ Telegram Premium")
+        lines.append(f"<tg-emoji emoji-id=\"5453901475648390219\">⭐</tg-emoji> <b>{prem_cat_name}</b>")
+        for pc in prem_countries:
+            flag = get_country_flag(pc.country)
+            lines.append(f"  {flag} {pc.country.title()} — available @ <b>${float(pc.price):.2f}</b>/each")
 
     lines.append(f"\n━━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"📊 <b>Total Available:</b> {total_qty} numbers")
@@ -2069,15 +2083,15 @@ async def cb_cat_country(query: CallbackQuery) -> None:
 
     if disc_pct > 0:
         discounted_price = price * (1 - disc_pct / 100)
-        price_line = f"💰 <b>Price:</b> <s>${price:.2f}</s> → <b>${discounted_price:.2f} USDT</b> ({disc_pct:.0f}% off 🎉)\n"
+        price_line = f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Price:</b> <s>${price:.2f}</s> → <b>${discounted_price:.2f} USDT</b> ({disc_pct:.0f}% off <tg-emoji emoji-id=\"5235711785482341993\">🎉</tg-emoji>)\n"
     else:
-        price_line = f"💰 <b>Price per Number:</b> ${price:.2f} USDT\n"
+        price_line = f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Price per Number:</b> ${price:.2f} USDT\n"
 
     await query.message.edit_text(
-        f"🌍 <b>{get_country_flag(country)} {country.title()}</b>\n"
-        f"📁 <b>Category:</b> {category_name}\n\n"
+        f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>{get_country_flag(country)} {country.title()}</b>\n"
+        f"<tg-emoji emoji-id=\"5305265301917549162\">📁</tg-emoji> <b>Category:</b> {category_name}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📱 <b>Available Numbers:</b> {available_count}\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Available Numbers:</b> {available_count}\n"
         f"{price_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click <b>Buy Now</b> to purchase a random number from this pool.",
@@ -2153,9 +2167,9 @@ async def cb_buy_confirm(query: CallbackQuery) -> None:
             ), 'danger', "5416041192905265756")],
         ])
         balance_line = (
-            f"💰 <b>Your Balance:</b> ${user_balance:.2f} USDT\n"
-            f"💵 <b>Cost:</b> ${price:.2f} USDT\n"
-            f"📉 <b>Balance after purchase:</b> ${balance_after:.2f} USDT"
+            f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Your Balance:</b> ${user_balance:.2f} USDT\n"
+            f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Cost:</b> ${price:.2f} USDT\n"
+            f"<tg-emoji emoji-id=\"5332455502917949981\">📉</tg-emoji> <b>Balance after purchase:</b> ${balance_after:.2f} USDT"
         )
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2166,15 +2180,15 @@ async def cb_buy_confirm(query: CallbackQuery) -> None:
             ), 'danger', "5416041192905265756")],
         ])
         balance_line = (
-            f"💰 <b>Your Balance:</b> ${user_balance:.2f} USDT\n"
-            f"💵 <b>Required:</b> ${price:.2f} USDT\n\n"
+            f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Your Balance:</b> ${user_balance:.2f} USDT\n"
+            f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Required:</b> ${price:.2f} USDT\n\n"
             f"❌ <b>Insufficient balance.</b> Please deposit funds first."
         )
 
     await query.message.edit_text(
-        f"🛒 <b>Confirm Purchase</b>\n\n"
-        f"🌍 <b>Country:</b> {flag} {country.title()}\n"
-        f"📱 <b>Available:</b> {available_count} number(s)\n"
+        f"<tg-emoji emoji-id=\"5406683434124859552\">🛒</tg-emoji> <b>Confirm Purchase</b>\n\n"
+        f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>Country:</b> {flag} {country.title()}\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Available:</b> {available_count} number(s)\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{balance_line}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -2342,10 +2356,10 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
 
     disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5235711785482341993\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
         f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
-        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
-        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
+        f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"{session_line}"
         f"{twofa_line}"
@@ -2355,7 +2369,7 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
         f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
         f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
+        f"<tg-emoji emoji-id=\"5456140674028019486\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
@@ -2946,12 +2960,12 @@ async def cb_buy_prem_confirm(query: CallbackQuery) -> None:
 
     # Show success message to user
     await query.message.edit_text(
-        f"<tg-emoji emoji-id='5461151367559141950'>🎉</tg-emoji> <b>Order Placed Successfully!</b>\n\n"
+        f"<tg-emoji emoji-id='5235711785482341993'>🎉</tg-emoji> <b>Order Placed Successfully!</b>\n\n"
         f"<tg-emoji emoji-id='5397782960512444700'>📌</tg-emoji> <b>Order ID:</b> <code>{order_ref}</code>\n"
-        f"<tg-emoji emoji-id='5460755126761312667'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
-        f"<tg-emoji emoji-id='5409048419211682843'>💵</tg-emoji> <b>Price Paid:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id='5224450179368767019'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
+        f"<tg-emoji emoji-id='5197434882321567830'>💵</tg-emoji> <b>Price Paid:</b> ${price:.2f} USDT\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id='5411590687663608498'>⚡</tg-emoji> Your order will be completed within <b>24 hours</b>.\n"
+        f"<tg-emoji emoji-id='5456140674028019486'>⚡</tg-emoji> Your order will be completed within <b>24 hours</b>.\n"
         f"We will notify you once your account is ready!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
@@ -2982,6 +2996,13 @@ async def cb_buy_prem_confirm(query: CallbackQuery) -> None:
             await query.bot.send_message(admin_id, admin_text, reply_markup=admin_kb, parse_mode=ParseMode.HTML)
         except Exception as exc:
             log.warning("Could not notify admin %s of premium order: %s", admin_id, exc)
+
+    # Post to log channel
+    async with AsyncSessionFactory() as _log_session:
+        _log_user_res = await _log_session.execute(select(User).where(User.id == user_id))
+        _log_user_obj = _log_user_res.scalar_one_or_none()
+        _total_dep = Decimal(str(_log_user_obj.total_deposited or 0)) if _log_user_obj else Decimal("0")
+    await post_to_log_channel(query.bot, user_display, CATEGORY_TELEGRAM_PREMIUM, country_name, price, "Pending", user_id=user_id, total_deposited=_total_dep)
 
 
 @router.callback_query(F.data.startswith("prem_admin_confirm_"))
@@ -3104,7 +3125,7 @@ async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
             f"<tg-emoji emoji-id='5206607081334906820'>✅</tg-emoji> <b>Your Premium Order is Ready!</b>\n\n"
             f"<tg-emoji emoji-id='5397782960512444700'>📌</tg-emoji> <b>Order ID:</b> <code>{order_ref}</code>\n"
             f"<tg-emoji emoji-id='5197252827247841976'>📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
-            f"<tg-emoji emoji-id='5460755126761312667'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
+            f"<tg-emoji emoji-id='5224450179368767019'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
             f"{twofa_line}"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"<tg-emoji emoji-id='5274055917766202507'>📋</tg-emoji> <b>Next Steps:</b>\n"
@@ -3112,7 +3133,7 @@ async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
             f"<tg-emoji emoji-id='5381990043642502553'>2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
             f"<tg-emoji emoji-id='5381879959335738545'>3️⃣</tg-emoji> Tap Send Code in Telegram\n"
             f"<tg-emoji emoji-id='5382054253403577563'>4️⃣</tg-emoji> Come back here and press 🔄 Get OTP\n\n"
-            f"<tg-emoji emoji-id='5411590687663608498'>⚡</tg-emoji> OTP is fetched instantly from the account!",
+            f"<tg-emoji emoji-id='5456140674028019486'>⚡</tg-emoji> OTP is fetched instantly from the account!",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798"),
             ]]),
@@ -3564,11 +3585,12 @@ async def cb_getotp(query: CallbackQuery) -> None:
     if otp_code:
         await _safe_edit(
             query.message,
-            f"✅ <b>Your OTP Code:</b>\n\n"
+            f"<tg-emoji emoji-id='5206607081334906820'>✅</tg-emoji> <b>Your OTP Code:</b>\n\n"
             f"<code>{otp_code}</code>\n\n"
-            f"📱 Enter this code in Telegram to complete login.\n"
+            f"<tg-emoji emoji-id='5197252827247841976'>📱</tg-emoji> Enter this code in Telegram to complete login.\n"
             f"⚠️ Do <b>not</b> share this code with anyone.",
             InlineKeyboardMarkup(inline_keyboard=[
+                [apply_button_style(InlineKeyboardButton(text="Get OTP Again", callback_data=f"getotp_{product_id}"), 'primary', "5449569374065152798")],
                 [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
             ]),
         )
