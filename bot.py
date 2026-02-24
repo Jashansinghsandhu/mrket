@@ -86,11 +86,14 @@ CATEGORY_TELEGRAM_OLD = "telegram_old_accounts"
 CATEGORY_TELEGRAM_SESSIONS = "telegram_sessions"
 CATEGORY_WHATSAPP_SMS = "whatsapp_sms"
 
+CATEGORY_TELEGRAM_PREMIUM = "telegram_premium"
+
 PRODUCT_CATEGORIES = {
     CATEGORY_TELEGRAM_ACCOUNTS: "📱 Telegram Accounts",
     CATEGORY_TELEGRAM_OLD: "📱 Telegram Old Accounts",
     CATEGORY_TELEGRAM_SESSIONS: "🔐 Telegram Sessions",
     CATEGORY_WHATSAPP_SMS: "💬 WhatsApp SMS",
+    CATEGORY_TELEGRAM_PREMIUM: "⭐ Telegram Premium",
 }
 
 COUNTRY_FLAGS: dict[str, str] = {
@@ -261,6 +264,7 @@ class Product(Base):
     latest_otp     = Column(String(16), nullable=True)
     otp_updated_at = Column(DateTime, nullable=True)
     year           = Column(Integer, nullable=True)  # For telegram_old_accounts
+    twofa_password = Column(Text, nullable=True)
 
 
 class Transaction(Base):
@@ -345,6 +349,29 @@ class CustomCategory(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class PremiumCountry(Base):
+    __tablename__ = "premium_countries"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    country    = Column(String(64), nullable=False, unique=True)
+    price      = Column(Numeric(18, 6), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PremiumOrder(Base):
+    __tablename__ = "premium_orders"
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    order_ref      = Column(String(32), unique=True, nullable=False)
+    user_id        = Column(BigInteger, nullable=False)
+    country        = Column(String(64), nullable=False)
+    price          = Column(Numeric(18, 6), nullable=False)
+    status         = Column(String(16), default="Pending")
+    phone_number   = Column(String(32), nullable=True)
+    session_string = Column(Text, nullable=True)
+    twofa_password = Column(Text, nullable=True)
+    product_id     = Column(Integer, nullable=True)
+    created_at     = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -362,6 +389,9 @@ async def init_db() -> None:
             "CREATE TABLE IF NOT EXISTS user_discounts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id BIGINT NOT NULL UNIQUE, min_deposit NUMERIC(18,6) NOT NULL, discount_pct NUMERIC(6,2) NOT NULL, created_at DATETIME)",
             "CREATE TABLE IF NOT EXISTS gift_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, code VARCHAR(64) NOT NULL UNIQUE, amount NUMERIC(18,6) NOT NULL, max_claims INTEGER NOT NULL, min_buy_volume NUMERIC(18,6) DEFAULT 0, claims_count INTEGER DEFAULT 0, is_active BOOLEAN DEFAULT 1, created_at DATETIME)",
             "CREATE TABLE IF NOT EXISTS gift_code_claims (id INTEGER PRIMARY KEY AUTOINCREMENT, code_id INTEGER NOT NULL, user_id BIGINT NOT NULL, created_at DATETIME)",
+            "ALTER TABLE products ADD COLUMN twofa_password TEXT",
+            "CREATE TABLE IF NOT EXISTS premium_countries (id INTEGER PRIMARY KEY AUTOINCREMENT, country VARCHAR(64) NOT NULL UNIQUE, price NUMERIC(18,6) NOT NULL, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS premium_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_ref VARCHAR(32) UNIQUE NOT NULL, user_id BIGINT NOT NULL, country VARCHAR(64) NOT NULL, price NUMERIC(18,6) NOT NULL, status VARCHAR(16) DEFAULT 'Pending', phone_number VARCHAR(32), session_string TEXT, twofa_password TEXT, product_id INTEGER, created_at DATETIME)",
         ]
         for migration in migrations:
             try:
@@ -969,6 +999,7 @@ class AdminAddNumber(StatesGroup):
     phone          = State()
     price          = State()
     session_string = State()
+    twofa_password = State()
 
 
 class AdminFulfillOrder(StatesGroup):
@@ -1006,6 +1037,17 @@ class OxaPayCustomAmount(StatesGroup):
 class AdminCustomCategoryState(StatesGroup):
     name     = State()
     sub_name = State()
+
+
+class AdminAddPremiumCountry(StatesGroup):
+    country = State()
+    price   = State()
+
+
+class AdminFulfillPremiumOrder(StatesGroup):
+    phone          = State()
+    session_string = State()
+    twofa_password = State()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1712,7 +1754,7 @@ async def get_applicable_discount(session: AsyncSession, user_id: int, total_dep
     return Decimal("0")
 
 
-async def post_to_log_channel(bot: Bot, user_display: str, category: str, country: str, price: Decimal, phone_number: str, discount_pct: Decimal = Decimal("0")) -> None:
+async def post_to_log_channel(bot: Bot, user_display: str, category: str, country: str, price: Decimal, phone_number: str, discount_pct: Decimal = Decimal("0"), user_id=None, total_deposited: Decimal = Decimal("0")) -> None:
     """Post purchase details to the log channel if configured."""
     if not LOG_CHANNEL:
         return
@@ -1727,6 +1769,7 @@ async def post_to_log_channel(bot: Bot, user_display: str, category: str, countr
             f"@{LOG_CHANNEL}",
             f"🛒 <b>New Purchase!</b>\n\n"
             f"👤 <b>Buyer:</b> {user_display}\n"
+            f"💰 <b>Total Deposited:</b> ${total_deposited:.2f} USDT\n"
             f"📁 <b>Category:</b> {cat_name}\n"
             f"🌍 <b>Country:</b> {flag} {country.title()}\n"
             f"📱 <b>Number:</b> <code>{masked_phone}</code>\n"
@@ -1802,6 +1845,7 @@ async def cb_buy_cat_telegram(query: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
             [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Premium", callback_data="buy_prem"), 'success', "5453901475648390219")],
             [apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
@@ -1895,7 +1939,7 @@ async def _show_category_countries(
         countries_data = rows.fetchall()
 
     if not countries_data:
-        text = f"😔 No {category_name} available right now.\n\nCheck back later!"
+        text = f'<tg-emoji emoji-id="5224607267797606837">😔</tg-emoji> No {category_name} available right now.\n\nCheck back later!'
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756"),
         ]])
@@ -2240,6 +2284,7 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         phone = product.phone_number
         price = actual_price
         sess_str = product.session_string
+        twofa_enc = product.twofa_password
         pid = product.id
 
     # Clear any stale OTP from previous ownership
@@ -2256,8 +2301,20 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         await otp_manager.start_listener(pid, sess_str)
 
     # Post to log channel
-    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
-    await post_to_log_channel(query.bot, user_display, category, country, price, phone, disc_pct)
+    _uname = query.from_user.username
+    user_display = f"@{_uname}" if _uname else str(query.from_user.id)
+    async with AsyncSessionFactory() as _log_session:
+        _log_user = await _log_session.execute(select(User).where(User.id == user_id))
+        _log_user_obj = _log_user.scalar_one_or_none()
+        _total_dep = Decimal(str(_log_user_obj.total_deposited or 0)) if _log_user_obj else Decimal("0")
+    await post_to_log_channel(query.bot, user_display, category, country, price, phone, disc_pct, user_id=user_id, total_deposited=_total_dep)
+    twofa_line = ""
+    if twofa_enc:
+        try:
+            twofa_plain = decrypt_privkey(twofa_enc)
+            twofa_line = f"🔐 <b>2FA Password:</b> <code>{twofa_plain}</code>\n"
+        except Exception:
+            pass
 
     # Session string is only shown for Telegram Sessions category
     if category == CATEGORY_TELEGRAM_SESSIONS:
@@ -2273,12 +2330,13 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"{session_line}"
+        f"{twofa_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
-        f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
-        f"2️⃣ Enter the number: <code>{phone}</code>\n"
-        f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
-        f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
+        f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
+        f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
+        f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
@@ -2306,7 +2364,7 @@ async def _show_old_account_years(message: Message, edit: bool = False) -> None:
         years = [r[0] for r in rows.fetchall()]
 
     if not years:
-        text = "😔 No Telegram Old Accounts available right now.\n\nCheck back later!"
+        text = '<tg-emoji emoji-id="5224607267797606837">😔</tg-emoji> No <tg-emoji emoji-id="5197252827247841976">📱</tg-emoji> Telegram Old Accounts available right now.\n\nCheck back later!'
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756"),
         ]])
@@ -2660,6 +2718,7 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         phone = product.phone_number
         price = actual_price
         sess_str = product.session_string
+        twofa_enc = product.twofa_password
         pid = product.id
 
     # Clear any stale OTP
@@ -2675,8 +2734,20 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         await otp_manager.start_listener(pid, sess_str)
 
     # Post to log channel
-    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
-    await post_to_log_channel(query.bot, user_display, CATEGORY_TELEGRAM_OLD, country, price, phone, disc_pct)
+    _uname = query.from_user.username
+    user_display = f"@{_uname}" if _uname else str(query.from_user.id)
+    async with AsyncSessionFactory() as _log_session:
+        _log_user = await _log_session.execute(select(User).where(User.id == user_id))
+        _log_user_obj = _log_user.scalar_one_or_none()
+        _total_dep = Decimal(str(_log_user_obj.total_deposited or 0)) if _log_user_obj else Decimal("0")
+    await post_to_log_channel(query.bot, user_display, CATEGORY_TELEGRAM_OLD, country, price, phone, disc_pct, user_id=user_id, total_deposited=_total_dep)
+    twofa_line = ""
+    if twofa_enc:
+        try:
+            twofa_plain = decrypt_privkey(twofa_enc)
+            twofa_line = f"🔐 <b>2FA Password:</b> <code>{twofa_plain}</code>\n"
+        except Exception:
+            pass
 
     # Old accounts show only OTP, not session string
     disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
@@ -2687,17 +2758,408 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id=\"5274055917766202507\">📅</tg-emoji> <b>Year:</b> {year}\n"
         f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
+        f"{twofa_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
-        f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
-        f"2️⃣ Enter the number: <code>{phone}</code>\n"
-        f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
-        f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
+        f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
+        f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
+        f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+
+# ── Telegram Premium Buy Flow ─────────────────────────────────────────────────
+
+@router.callback_query(F.data == "buy_prem")
+async def cb_buy_prem(query: CallbackQuery) -> None:
+    """Show available premium countries."""
+    await query.answer()
+    async with AsyncSessionFactory() as session:
+        rows = await session.execute(
+            select(PremiumCountry).order_by(PremiumCountry.country)
+        )
+        countries = rows.scalars().all()
+
+    if not countries:
+        await query.message.edit_text(
+            '<tg-emoji emoji-id="5224607267797606837">😔</tg-emoji> No Telegram Premium accounts available right now.',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756"),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    buttons = []
+    for c in countries:
+        flag = get_country_flag(c.country)
+        buttons.append([apply_button_style(InlineKeyboardButton(
+            text=f"{flag} {c.country.title()} — ${float(c.price):.2f}",
+            callback_data=f"buy_prem_ctry_{c.id}",
+        ), 'primary', "5453901475648390219")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
+
+    await query.message.edit_text(
+        "<tg-emoji emoji-id=\"5453901475648390219\">⭐</tg-emoji> <b>Telegram Premium</b>\n\n"
+        "Select a country:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data.startswith("buy_prem_ctry_"))
+async def cb_buy_prem_country(query: CallbackQuery) -> None:
+    """Show premium country details and confirm button."""
+    await query.answer()
+    try:
+        country_id = int(query.data.replace("buy_prem_ctry_", ""))
+    except ValueError:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(select(PremiumCountry).where(PremiumCountry.id == country_id))
+        pc = res.scalar_one_or_none()
+
+    if pc is None:
+        await query.answer("Country not found.", show_alert=True)
+        return
+
+    user_id = query.from_user.id
+    async with AsyncSessionFactory() as session:
+        u_res = await session.execute(select(User).where(User.id == user_id))
+        u_obj = u_res.scalar_one_or_none()
+        user_balance = Decimal(str(u_obj.balance or 0)) if u_obj else Decimal("0")
+
+    flag = get_country_flag(pc.country)
+    price = Decimal(str(pc.price))
+
+    await query.message.edit_text(
+        f"<tg-emoji emoji-id=\"5453901475648390219\">⭐</tg-emoji> <b>Telegram Premium</b>\n\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {flag} {pc.country.title()}\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Price:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Your Balance:</b> ${user_balance:.2f} USDT\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Your order will be completed within <b>24 hours</b>.\n"
+        f"You'll receive the account details once ready.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [apply_button_style(InlineKeyboardButton(text="Confirm Order", callback_data=f"buy_prem_confirm_{country_id}"), 'success', "5206607081334906820")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="buy_prem"), 'danger', "5416041192905265756")],
+        ]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data.startswith("buy_prem_confirm_"))
+async def cb_buy_prem_confirm(query: CallbackQuery) -> None:
+    """Process premium order placement."""
+    await query.answer()
+    try:
+        country_id = int(query.data.replace("buy_prem_confirm_", ""))
+    except ValueError:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    user_id = query.from_user.id
+
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(select(PremiumCountry).where(PremiumCountry.id == country_id))
+        pc = res.scalar_one_or_none()
+        if pc is None:
+            await query.answer("Country not found.", show_alert=True)
+            return
+
+        user = await get_or_create_user(session, user_id, query.from_user.username, first_name=query.from_user.first_name)
+        if user.is_banned:
+            await query.answer("🚫 You are banned.", show_alert=True)
+            return
+
+        price = Decimal(str(pc.price))
+        if Decimal(str(user.balance)) < price:
+            await query.message.edit_text(
+                f"❌ <b>Insufficient Balance</b>\n\n"
+                f"💰 Your balance: <b>${user.balance:.2f}</b>\n"
+                f"💵 Required: <b>${price:.2f}</b>\n\n"
+                f"Please deposit funds first.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
+                    [apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_prem_ctry_{country_id}"), 'danger', "5416041192905265756")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        # Deduct balance
+        await session.execute(
+            update(User).where(User.id == user_id).values(balance=User.balance - price)
+        )
+
+        # Create order
+        order_ref = f"PRM-{secrets.token_hex(4).upper()}"
+        prem_order = PremiumOrder(
+            order_ref=order_ref,
+            user_id=user_id,
+            country=pc.country,
+            price=price,
+            status="Pending",
+        )
+        session.add(prem_order)
+        await session.flush()
+
+        # Record transaction
+        txn = Transaction(
+            user_id=user_id,
+            type="Purchase",
+            amount=price,
+            status="Pending",
+        )
+        session.add(txn)
+        await session.commit()
+        country_name = pc.country
+
+    flag = get_country_flag(country_name)
+
+    # Show success message to user
+    await query.message.edit_text(
+        f"<tg-emoji emoji-id='5461151367559141950'>🎉</tg-emoji> <b>Order Placed Successfully!</b>\n\n"
+        f"<tg-emoji emoji-id='5397782960512444700'>📌</tg-emoji> <b>Order ID:</b> <code>{order_ref}</code>\n"
+        f"<tg-emoji emoji-id='5460755126761312667'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
+        f"<tg-emoji emoji-id='5409048419211682843'>💵</tg-emoji> <b>Price Paid:</b> ${price:.2f} USDT\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<tg-emoji emoji-id='5411590687663608498'>⚡</tg-emoji> Your order will be completed within <b>24 hours</b>.\n"
+        f"We will notify you once your account is ready!",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+    # Notify admins
+    username = query.from_user.username
+    user_display = f"@{username}" if username else str(user_id)
+    dt_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    admin_text = (
+        f"🆕 <b>New Premium Order!</b>\n\n"
+        f"📌 <b>Order ID:</b> {order_ref}\n"
+        f"👤 <b>User:</b> {user_display}\n"
+        f"🌍 <b>Country:</b> {flag} {country_name.title()}\n"
+        f"💵 <b>Price:</b> ${price:.2f} USDT\n"
+        f"⏰ {dt_str}"
+    )
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            apply_button_style(InlineKeyboardButton(text="Confirm", callback_data=f"prem_admin_confirm_{order_ref}"), 'success', "5206607081334906820"),
+            apply_button_style(InlineKeyboardButton(text="Decline", callback_data=f"prem_admin_decline_{order_ref}"), 'danger', "5416041192905265756"),
+        ]
+    ])
+    for admin_id in ADMIN_IDS:
+        try:
+            await query.bot.send_message(admin_id, admin_text, reply_markup=admin_kb, parse_mode=ParseMode.HTML)
+        except Exception as exc:
+            log.warning("Could not notify admin %s of premium order: %s", admin_id, exc)
+
+
+@router.callback_query(F.data.startswith("prem_admin_confirm_"))
+@admin_only
+async def cb_prem_admin_confirm(query: CallbackQuery, state: FSMContext) -> None:
+    """Admin confirms a premium order - starts fulfillment FSM."""
+    await query.answer()
+    order_ref = query.data.replace("prem_admin_confirm_", "")
+    await state.set_state(AdminFulfillPremiumOrder.phone)
+    await state.update_data(prem_order_ref=order_ref)
+    await query.message.answer(
+        f"📌 Fulfilling Premium Order <code>{order_ref}</code>\n\n"
+        f"Enter the <b>phone number</b> for this premium order:",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminFulfillPremiumOrder.phone)
+@admin_only
+async def fsm_prem_fulfill_phone(message: Message, state: FSMContext) -> None:
+    await state.update_data(prem_phone=message.text.strip())
+    await state.set_state(AdminFulfillPremiumOrder.session_string)
+    await message.answer(
+        "Now paste the <b>Pyrogram session string</b>:",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminFulfillPremiumOrder.session_string)
+@admin_only
+async def fsm_prem_fulfill_session(message: Message, state: FSMContext) -> None:
+    await state.update_data(prem_session=message.text.strip())
+    await state.set_state(AdminFulfillPremiumOrder.twofa_password)
+    await message.answer(
+        "Does this account have a 2FA password? Enter it, or send <code>0</code> to skip:",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminFulfillPremiumOrder.twofa_password)
+@admin_only
+async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
+    raw = message.text.strip()
+    twofa_enc: Optional[str] = None
+    if raw != "0":
+        twofa_enc = encrypt_privkey(raw)
+    twofa_plain = raw if raw != "0" else None
+
+    data = await state.get_data()
+    order_ref = data["prem_order_ref"]
+    phone = data["prem_phone"]
+    sess_str = data["prem_session"]
+    await state.clear()
+
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(select(PremiumOrder).where(PremiumOrder.order_ref == order_ref))
+        prem_order = res.scalar_one_or_none()
+        if prem_order is None:
+            await message.answer(f"❌ Premium order {order_ref} not found.")
+            return
+
+        # Create a Product for this premium order
+        product = Product(
+            category=CATEGORY_TELEGRAM_PREMIUM,
+            country=prem_order.country,
+            phone_number=phone,
+            price=prem_order.price,
+            session_string=sess_str,
+            twofa_password=twofa_enc,
+            status="Sold",
+        )
+        session.add(product)
+        await session.flush()
+
+        # Update PremiumOrder
+        await session.execute(
+            update(PremiumOrder).where(PremiumOrder.order_ref == order_ref).values(
+                status="Completed",
+                phone_number=phone,
+                session_string=sess_str,
+                twofa_password=twofa_enc,
+                product_id=product.id,
+            )
+        )
+
+        # Update transaction to Completed
+        await session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == prem_order.user_id,
+                Transaction.type == "Purchase",
+                Transaction.status == "Pending",
+                Transaction.amount == prem_order.price,
+            )
+            .values(status="Completed")
+        )
+
+        await session.commit()
+        buyer_id = prem_order.user_id
+        country_name = prem_order.country
+        price = Decimal(str(prem_order.price))
+        pid = product.id
+
+    # Start OTP listener
+    if sess_str:
+        await otp_manager.start_listener(pid, sess_str)
+
+    # Notify user
+    flag = get_country_flag(country_name)
+    twofa_line = f"🔐 <b>2FA Password:</b> <code>{twofa_plain}</code>\n" if twofa_plain else ""
+    try:
+        await message.bot.send_message(
+            buyer_id,
+            f"<tg-emoji emoji-id='5206607081334906820'>✅</tg-emoji> <b>Your Premium Order is Ready!</b>\n\n"
+            f"<tg-emoji emoji-id='5397782960512444700'>📌</tg-emoji> <b>Order ID:</b> <code>{order_ref}</code>\n"
+            f"<tg-emoji emoji-id='5197252827247841976'>📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id='5460755126761312667'>🌍</tg-emoji> <b>Country:</b> {flag} {country_name.title()}\n"
+            f"{twofa_line}"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<tg-emoji emoji-id='5274055917766202507'>📋</tg-emoji> <b>Next Steps:</b>\n"
+            f"<tg-emoji emoji-id='5382322671679708881'>1️⃣</tg-emoji> Open Telegram / Telegram X / TurboTel\n"
+            f"<tg-emoji emoji-id='5381990043642502553'>2️⃣</tg-emoji> Enter the number: {phone}\n"
+            f"<tg-emoji emoji-id='5381879959335738545'>3️⃣</tg-emoji> Tap Send Code in Telegram\n"
+            f"<tg-emoji emoji-id='5382054253403577563'>4️⃣</tg-emoji> Come back here and press 🔄 Get OTP\n\n"
+            f"<tg-emoji emoji-id='5411590687663608498'>⚡</tg-emoji> OTP is fetched instantly from the account!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798"),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        log.warning("Could not notify premium buyer %s: %s", buyer_id, exc)
+
+    await message.answer(
+        f"✅ Premium order <code>{order_ref}</code> fulfilled and buyer notified.",
+        reply_markup=build_admin_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data.startswith("prem_admin_decline_"))
+@admin_only
+async def cb_prem_admin_decline(query: CallbackQuery) -> None:
+    """Admin declines a premium order - refund user."""
+    await query.answer()
+    order_ref = query.data.replace("prem_admin_decline_", "")
+
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(select(PremiumOrder).where(PremiumOrder.order_ref == order_ref))
+        prem_order = res.scalar_one_or_none()
+        if prem_order is None:
+            await query.answer("Order not found.", show_alert=True)
+            return
+
+        if prem_order.status != "Pending":
+            await query.answer("Order already processed.", show_alert=True)
+            return
+
+        price = Decimal(str(prem_order.price))
+        buyer_id = prem_order.user_id
+
+        await session.execute(
+            update(PremiumOrder).where(PremiumOrder.order_ref == order_ref).values(status="Declined")
+        )
+        # Refund user
+        await session.execute(
+            update(User).where(User.id == buyer_id).values(balance=User.balance + price)
+        )
+        # Update transaction
+        await session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == buyer_id,
+                Transaction.type == "Purchase",
+                Transaction.status == "Pending",
+                Transaction.amount == price,
+            )
+            .values(status="Refunded")
+        )
+        await session.commit()
+
+    # Notify user
+    try:
+        await query.bot.send_message(
+            buyer_id,
+            f"❌ <b>Your Premium Order has been Declined</b>\n\n"
+            f"📌 <b>Order ID:</b> <code>{order_ref}</code>\n"
+            f"↩️ <b>Refund:</b> ${price:.2f} USDT has been returned to your balance.\n\n"
+            f"We apologize for the inconvenience. Please contact support if you have questions.",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        log.warning("Could not notify premium buyer %s of decline: %s", buyer_id, exc)
+
+    await query.message.edit_text(
+        f"✅ Order <code>{order_ref}</code> declined and user refunded.",
         parse_mode=ParseMode.HTML,
     )
 
@@ -2964,6 +3426,7 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         price = actual_price
         country = p.country
         sess_str = p.session_string
+        twofa_enc = p.twofa_password
         pid = p.id
         p_category = p.category
 
@@ -2981,8 +3444,20 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         await otp_manager.start_listener(pid, sess_str)
 
     # Post to log channel
-    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
-    await post_to_log_channel(query.bot, user_display, p_category, country, price, phone, disc_pct)
+    _uname = query.from_user.username
+    user_display = f"@{_uname}" if _uname else str(query.from_user.id)
+    async with AsyncSessionFactory() as _log_session:
+        _log_user = await _log_session.execute(select(User).where(User.id == user_id))
+        _log_user_obj = _log_user.scalar_one_or_none()
+        _total_dep = Decimal(str(_log_user_obj.total_deposited or 0)) if _log_user_obj else Decimal("0")
+    await post_to_log_channel(query.bot, user_display, p_category, country, price, phone, disc_pct, user_id=user_id, total_deposited=_total_dep)
+    twofa_line = ""
+    if twofa_enc:
+        try:
+            twofa_plain = decrypt_privkey(twofa_enc)
+            twofa_line = f"🔐 <b>2FA Password:</b> <code>{twofa_plain}</code>\n"
+        except Exception:
+            pass
 
     # Session string is only shown for Telegram Sessions category
     if p_category == CATEGORY_TELEGRAM_SESSIONS:
@@ -2998,12 +3473,13 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"{session_line}"
+        f"{twofa_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> Next Steps:</b>\n"
-        f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
-        f"2️⃣ Enter the number: <code>{phone}</code>\n"
-        f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
-        f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
+        f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
+        f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
+        f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
@@ -3455,6 +3931,7 @@ async def cb_admin_add_number(query: CallbackQuery, state: FSMContext) -> None:
     ]
     for cc in custom_cats:
         kb_rows.append([apply_button_style(InlineKeyboardButton(text=cc.name, callback_data=f"admin_add_cat_{cc.slug}"), 'primary', "5197252827247841976")])
+    kb_rows.append([apply_button_style(InlineKeyboardButton(text="Add Premium Country", callback_data="admin_add_premium_country"), 'success', "5453901475648390219")])
     kb_rows.append([apply_button_style(InlineKeyboardButton(text="➕ Custom Category", callback_data="admin_add_custom_cat"), 'success', "5461151367559141950")])
     kb_rows.append([apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756")])
 
@@ -3598,8 +4075,27 @@ async def fsm_add_price(message: Message, state: FSMContext) -> None:
 @router.message(AdminAddNumber.session_string)
 @admin_only
 async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
+    await state.update_data(session_string=message.text.strip())
+    await state.set_state(AdminAddNumber.twofa_password)
+    await message.answer(
+        "Does this account have a 2FA password? Enter it now, or send <code>0</code> to skip.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminAddNumber.twofa_password)
+@admin_only
+async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
+    raw = message.text.strip()
+    twofa_enc: Optional[str] = None
+    if raw != "0":
+        twofa_enc = encrypt_privkey(raw)
+
     data = await state.get_data()
-    session_str = message.text.strip()
+    session_str = data.get("session_string", "")
     category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
     category_name = PRODUCT_CATEGORIES.get(category)
     if category_name is None:
@@ -3607,7 +4103,7 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
             cc_res = await session.execute(select(CustomCategory).where(CustomCategory.slug == category))
             cc = cc_res.scalar_one_or_none()
             category_name = cc.name if cc else "Custom Category"
-    
+
     async with AsyncSessionFactory() as session:
         product = Product(
             category=category,
@@ -3615,6 +4111,7 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
             phone_number=data["phone"],
             price=Decimal(data["price"]),
             session_string=session_str,
+            twofa_password=twofa_enc,
             status="Available",
             year=data.get("year"),
         )
@@ -3623,6 +4120,7 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
 
     year = data.get("year")
     year_line = f"📅 Year: <b>{year}</b>\n" if year else ""
+    twofa_line = "🔐 2FA: ✅ Set\n" if twofa_enc else ""
     await state.clear()
     await message.answer(
         f"✅ <b>Number Added Successfully!</b>\n\n"
@@ -3631,7 +4129,8 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
         f"📱 Number: <b>{data['phone']}</b>\n"
         f"🌍 Country: <b>{get_country_flag(data['country'])} {data['country'].title()}</b>\n"
         f"💰 Price: <b>${data['price']} USDT</b>\n"
-        f"🔐 Session: ✅ Configured",
+        f"🔐 Session: ✅ Configured\n"
+        f"{twofa_line}",
         reply_markup=build_admin_keyboard(),
         parse_mode=ParseMode.HTML,
     )
@@ -3654,6 +4153,68 @@ async def cb_admin_cancel_add(query: CallbackQuery, state: FSMContext) -> None:
             reply_markup=build_admin_keyboard(),
             parse_mode=ParseMode.HTML,
         )
+
+
+@router.callback_query(F.data == "admin_add_premium_country")
+@admin_only
+async def cb_admin_add_premium_country(query: CallbackQuery, state: FSMContext) -> None:
+    """Start add premium country flow."""
+    await query.answer()
+    await state.set_state(AdminAddPremiumCountry.country)
+    await query.message.edit_text(
+        "⭐ <b>Add Premium Country</b>\n\nEnter the <b>country name</b> for Telegram Premium:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminAddPremiumCountry.country)
+@admin_only
+async def fsm_prem_country_name(message: Message, state: FSMContext) -> None:
+    country_name = message.text.strip().lower()
+    await state.update_data(prem_add_country=country_name)
+    await state.set_state(AdminAddPremiumCountry.price)
+    await message.answer(
+        f"Country: <b>{country_name.title()}</b>\n\nEnter the <b>price per account</b> (USDT):",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminAddPremiumCountry.price)
+@admin_only
+async def fsm_prem_country_price(message: Message, state: FSMContext) -> None:
+    try:
+        price = Decimal(message.text.strip())
+        if price <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid price. Enter a positive number like 5.00:", parse_mode=ParseMode.HTML)
+        return
+
+    data = await state.get_data()
+    country_name = data["prem_add_country"]
+    await state.clear()
+
+    async with AsyncSessionFactory() as session:
+        existing = await session.execute(
+            select(PremiumCountry).where(PremiumCountry.country == country_name.lower())
+        )
+        pc = existing.scalar_one_or_none()
+        if pc:
+            await session.execute(
+                update(PremiumCountry).where(PremiumCountry.country == country_name.lower()).values(price=price)
+            )
+        else:
+            session.add(PremiumCountry(country=country_name.lower(), price=price))
+        await session.commit()
+
+    await message.answer(
+        f"✅ Premium country <b>{country_name.title()}</b> added at <b>${price:.2f}</b> USDT.",
+        reply_markup=build_admin_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.callback_query(F.data == "admin_add_custom_cat")
@@ -4175,6 +4736,62 @@ async def cmd_help(message: Message) -> None:
 
 
 # ── /remove command ───────────────────────────────────────────────────────────
+
+@router.message(Command("order"))
+@admin_only
+async def cmd_order(message: Message) -> None:
+    """Show details of a specific premium order."""
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Usage: <code>/order ORDER_ID</code>", parse_mode=ParseMode.HTML)
+        return
+    order_ref = parts[1].strip().upper()
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(select(PremiumOrder).where(PremiumOrder.order_ref == order_ref))
+        prem_order = res.scalar_one_or_none()
+    if prem_order is None:
+        await message.answer(f"❌ Order <code>{order_ref}</code> not found.", parse_mode=ParseMode.HTML)
+        return
+    flag = get_country_flag(prem_order.country)
+    dt = prem_order.created_at.strftime("%Y-%m-%d %H:%M") if prem_order.created_at else "N/A"
+    text = (
+        f"📌 <b>Order:</b> <code>{prem_order.order_ref}</code>\n"
+        f"👤 <b>User ID:</b> {prem_order.user_id}\n"
+        f"🌍 <b>Country:</b> {flag} {prem_order.country.title()}\n"
+        f"💵 <b>Price:</b> ${prem_order.price:.2f} USDT\n"
+        f"📊 <b>Status:</b> {prem_order.status}\n"
+        f"⏰ <b>Created:</b> {dt}"
+    )
+    kb = None
+    if prem_order.status == "Pending":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Confirm", callback_data=f"prem_admin_confirm_{order_ref}"), 'success', "5206607081334906820"),
+            apply_button_style(InlineKeyboardButton(text="Decline", callback_data=f"prem_admin_decline_{order_ref}"), 'danger', "5416041192905265756"),
+        ]])
+    await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("orders"))
+@admin_only
+async def cmd_orders(message: Message) -> None:
+    """List all premium orders (pending first)."""
+    async with AsyncSessionFactory() as session:
+        res = await session.execute(
+            select(PremiumOrder).order_by(
+                PremiumOrder.status,
+                PremiumOrder.created_at.desc()
+            )
+        )
+        all_orders = res.scalars().all()
+    if not all_orders:
+        await message.answer("No premium orders found.")
+        return
+    lines = ["<b>Premium Orders</b>\n"]
+    for o in all_orders[:50]:
+        dt = o.created_at.strftime("%m-%d") if o.created_at else "N/A"
+        lines.append(f"• <code>{o.order_ref}</code> | UID:{o.user_id} | {o.country.title()} | {o.status} | {dt}")
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+
 
 @router.message(Command("remove"))
 @admin_only
@@ -5054,6 +5671,14 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         sess_line = "\n" + format_session_full(p.session_string)
     else:
         sess_line = ""
+    # 2FA password
+    twofa_detail_line = ""
+    if p.twofa_password:
+        try:
+            twofa_plain = decrypt_privkey(p.twofa_password)
+            twofa_detail_line = f"\n🔐 <b>2FA Password:</b> <code>{twofa_plain}</code>"
+        except Exception:
+            pass
 
     await query.message.edit_text(
         f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>{p.phone_number}</b>\n"
@@ -5061,7 +5686,8 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> Price Paid: ${p.price:.2f} USDT\n"
         f"<tg-emoji emoji-id=\"5274055917766202507\">📅</tg-emoji> Purchased: {dt}\n\n"
         f"{otp_line}"
-        f"{sess_line}",
+        f"{sess_line}"
+        f"{twofa_detail_line}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         parse_mode=ParseMode.HTML,
     )
