@@ -503,8 +503,11 @@ async def check_channel_member(bot: Bot, user_id: int) -> bool:
     """Return True if user_id is a member/admin/creator of FORCE_JOIN_CHANNEL."""
     try:
         member = await bot.get_chat_member(f"@{FORCE_JOIN_CHANNEL}", user_id)
-        return member.status.value in ("member", "administrator", "creator")
+        return member.status in ("member", "administrator", "creator")
     except TelegramAPIError:
+        return False
+    except Exception as e:
+        log.error("Unexpected error in check_channel_member for user %s: %s", user_id, e)
         return False
 
 
