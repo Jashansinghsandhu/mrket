@@ -68,6 +68,7 @@ GAS_BNB_AMOUNT = 0.001
 BNB_CONFIRMATION_WAIT_SECONDS = 5
 REFERRAL_COMMISSION_PCT = 1.5
 SUPPORT_USERNAME = "jashanxjagy"  # Without @ prefix (added in URLs)
+LOG_CHANNEL = ""  # Add your channel username here (without @), e.g. "mychannel"
 DATABASE_URL = "sqlite+aiosqlite:///marketplace.db"
 BLOCKCHAIN_STATE_FILE = "blockchain_state.json"
 FERNET_KEY = "m8gzSFYcYk41uYxNUqCwpn-YGvo1_sVwDNTg-2FgBTg="
@@ -297,6 +298,43 @@ class OxaPayPayment(Base):
     updated_at   = Column(DateTime, nullable=True)
 
 
+class DiscountTier(Base):
+    __tablename__ = "discount_tiers"
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    min_deposit  = Column(Numeric(18, 6), nullable=False)
+    discount_pct = Column(Numeric(6, 2), nullable=False)
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class UserDiscount(Base):
+    __tablename__ = "user_discounts"
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    user_id      = Column(BigInteger, nullable=False, unique=True)
+    min_deposit  = Column(Numeric(18, 6), nullable=False)
+    discount_pct = Column(Numeric(6, 2), nullable=False)
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class GiftCode(Base):
+    __tablename__ = "gift_codes"
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    code           = Column(String(64), unique=True, nullable=False)
+    amount         = Column(Numeric(18, 6), nullable=False)
+    max_claims     = Column(Integer, nullable=False)
+    min_buy_volume = Column(Numeric(18, 6), default=0)
+    claims_count   = Column(Integer, default=0)
+    is_active      = Column(Boolean, default=True)
+    created_at     = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class GiftCodeClaim(Base):
+    __tablename__ = "gift_code_claims"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    code_id    = Column(Integer, nullable=False)
+    user_id    = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -310,6 +348,10 @@ async def init_db() -> None:
             "ALTER TABLE products ADD COLUMN category VARCHAR(32) DEFAULT 'telegram_accounts'",
             "ALTER TABLE transactions ADD COLUMN bonus NUMERIC(18, 6) DEFAULT 0",
             "ALTER TABLE products ADD COLUMN year INTEGER",
+            "CREATE TABLE IF NOT EXISTS discount_tiers (id INTEGER PRIMARY KEY AUTOINCREMENT, min_deposit NUMERIC(18,6) NOT NULL, discount_pct NUMERIC(6,2) NOT NULL, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS user_discounts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id BIGINT NOT NULL UNIQUE, min_deposit NUMERIC(18,6) NOT NULL, discount_pct NUMERIC(6,2) NOT NULL, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS gift_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, code VARCHAR(64) NOT NULL UNIQUE, amount NUMERIC(18,6) NOT NULL, max_claims INTEGER NOT NULL, min_buy_volume NUMERIC(18,6) DEFAULT 0, claims_count INTEGER DEFAULT 0, is_active BOOLEAN DEFAULT 1, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS gift_code_claims (id INTEGER PRIMARY KEY AUTOINCREMENT, code_id INTEGER NOT NULL, user_id BIGINT NOT NULL, created_at DATETIME)",
         ]
         for migration in migrations:
             try:
@@ -423,7 +465,7 @@ def get_help_text() -> str:
         "• Balance updates automatically!\n\n"
         "🛒 <b>2. BUY ACCOUNTS</b>\n"
         "• Tap 🛍️ Buy Accounts\n"
-        "• Choose category (Telegram/WhatsApp)\n"
+        "• Choose category (Telegram)\n"
         "• Select a country from the list\n"
         "• Tap Buy Now if balance is sufficient\n\n"
         "📲 <b>3. GET YOUR OTP</b>\n"
@@ -431,14 +473,22 @@ def get_help_text() -> str:
         "• Request login code in Telegram app\n"
         "• Come back & tap 🔄 Get OTP\n"
         "• Code appears instantly!\n\n"
-        "👥 <b>4. REFERRAL PROGRAM</b>\n"
+        "🎁 <b>4. GIFT CODES</b>\n"
+        "• Use <code>/claim CODE</code> to redeem a gift code\n"
+        "• Gift codes add balance to your account instantly!\n"
+        "• Check back regularly for special codes\n\n"
+        "👥 <b>5. REFERRAL PROGRAM</b>\n"
         f"• Earn {REFERRAL_COMMISSION_PCT}% on referral deposits\n"
         "• Share your unique link\n"
         "• Track earnings in Referral section\n\n"
-        "👤 <b>5. PROFILE</b>\n"
+        "👤 <b>6. PROFILE</b>\n"
         "• View your complete statistics\n"
         "• Check purchase history\n"
         "• Monitor bonus earnings\n\n"
+        "🏷️ <b>7. DISCOUNTS</b>\n"
+        "• Deposit more to unlock exclusive discounts!\n"
+        "• Discounts are applied automatically at checkout\n"
+        "• The more you deposit, the bigger the discount!\n\n"
         "🆘 <b>NEED HELP?</b>\n"
         f"Contact: @{SUPPORT_USERNAME}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━"
@@ -477,14 +527,10 @@ def build_main_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """Build the main menu with styled inline buttons."""
     buttons = [
         [apply_button_style(InlineKeyboardButton(text="🛍️ Buy Accounts", callback_data="buy"), 'primary')],
-        [
-            apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'success'),
-            apply_button_style(InlineKeyboardButton(text="👤 Profile", callback_data="profile"), 'primary'),
-        ],
-        [
-            apply_button_style(InlineKeyboardButton(text="🤝 Referral", callback_data="referral"), 'primary'),
-            apply_button_style(InlineKeyboardButton(text="❓ Help", callback_data="help"), 'primary'),
-        ],
+        [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="👤 Profile", callback_data="profile"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="🤝 Referral", callback_data="referral"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="❓ Help", callback_data="help"), 'primary')],
         [apply_button_style(InlineKeyboardButton(text="🆘 Support", url=f"https://t.me/{SUPPORT_USERNAME}"), 'danger')],
     ]
     if is_admin:
@@ -910,6 +956,22 @@ class AdminSearchUser(StatesGroup):
     user_input = State()
 
 
+class AdminDiscountState(StatesGroup):
+    discount_pct = State()
+    min_deposit  = State()
+
+
+class AdminUserDiscountState(StatesGroup):
+    discount_pct = State()
+    min_deposit  = State()
+
+
+class AdminCreateGiftCode(StatesGroup):
+    amount         = State()
+    max_claims     = State()
+    min_buy_volume = State()
+
+
 class OxaPayCustomAmount(StatesGroup):
     amount = State()
 
@@ -1046,9 +1108,69 @@ async def cb_help(query: CallbackQuery) -> None:
     await query.answer()
     await query.message.edit_text(
         get_help_text(),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger'),
-        ]]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [apply_button_style(InlineKeyboardButton(text="📦 Check Stock", callback_data="check_stock"), 'primary')],
+            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger')],
+        ]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "check_stock")
+async def cb_check_stock(query: CallbackQuery) -> None:
+    """Show all available stock by country and category with quantity and price."""
+    await query.answer()
+    from sqlalchemy import func
+    async with AsyncSessionFactory() as session:
+        rows = await session.execute(
+            select(
+                Product.category,
+                Product.country,
+                func.count(Product.id).label("qty"),
+                func.min(Product.price).label("price"),
+            )
+            .where(Product.status == "Available")
+            .group_by(Product.category, Product.country)
+            .order_by(Product.category, Product.country)
+        )
+        stock_data = rows.fetchall()
+
+    if not stock_data:
+        await query.message.edit_text(
+            "📦 <b>Current Stock</b>\n\n"
+            "😔 No numbers available right now.\n"
+            "Check back soon — we restock regularly! 🔄",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="◀️ Back to Help", callback_data="help"), 'danger'),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    lines = ["📦 <b>Available Stock</b>\n", "━━━━━━━━━━━━━━━━━━━━━\n"]
+    current_cat = None
+    total_qty = 0
+    for category, country, qty, price in stock_data:
+        total_qty += qty
+        cat_name = PRODUCT_CATEGORIES.get(category, category)
+        if category != current_cat:
+            if current_cat is not None:
+                lines.append("")
+            lines.append(f"📁 <b>{cat_name}</b>")
+            current_cat = category
+        flag = get_country_flag(country)
+        lines.append(f"  {flag} {country.title()} — {qty} available @ <b>${price:.2f}</b>/each")
+
+    lines.append(f"\n━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"📊 <b>Total Available:</b> {total_qty} numbers")
+    lines.append(f"\n<i>💡 Prices shown are per number. Tap Buy Accounts to purchase!</i>")
+
+    await query.message.edit_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [apply_button_style(InlineKeyboardButton(text="🛍️ Buy Now", callback_data="buy"), 'primary')],
+            [apply_button_style(InlineKeyboardButton(text="◀️ Back to Help", callback_data="help"), 'danger')],
+        ]),
         parse_mode=ParseMode.HTML,
     )
 
@@ -1533,6 +1655,57 @@ async def _process_oxapay_confirmation(payment: OxaPayPayment, data: dict) -> No
 
 # ── Buy flow ──────────────────────────────────────────────────────────────────
 
+async def get_applicable_discount(session: AsyncSession, user_id: int, total_deposited: Decimal) -> Decimal:
+    """
+    Returns the applicable discount percentage for a user.
+    Checks user-specific discount first, then global tiers.
+    """
+    # Check user-specific discount first
+    user_disc_res = await session.execute(
+        select(UserDiscount).where(UserDiscount.user_id == user_id)
+    )
+    user_disc = user_disc_res.scalar_one_or_none()
+    if user_disc is not None and total_deposited >= Decimal(str(user_disc.min_deposit)):
+        return Decimal(str(user_disc.discount_pct))
+
+    # Check global tiers - return highest applicable discount
+    tiers_res = await session.execute(
+        select(DiscountTier).order_by(DiscountTier.min_deposit.desc())
+    )
+    tiers = tiers_res.scalars().all()
+    for tier in tiers:
+        if total_deposited >= Decimal(str(tier.min_deposit)):
+            return Decimal(str(tier.discount_pct))
+
+    return Decimal("0")
+
+
+async def post_to_log_channel(bot: Bot, user_display: str, category: str, country: str, price: Decimal, phone_number: str, discount_pct: Decimal = Decimal("0")) -> None:
+    """Post purchase details to the log channel if configured."""
+    if not LOG_CHANNEL:
+        return
+    try:
+        cat_name = PRODUCT_CATEGORIES.get(category, category)
+        flag = get_country_flag(country)
+        # Show only first 3 and last 2 chars of the number for privacy
+        masked_phone = phone_number[:3] + "X" * max(0, len(phone_number) - 5) + phone_number[-2:] if len(phone_number) > 5 else "X" * len(phone_number)
+        disc_line = f"\n🏷️ <b>Discount Applied:</b> {discount_pct:.0f}%" if discount_pct > 0 else ""
+        await bot.send_message(
+            f"@{LOG_CHANNEL}",
+            f"🛒 <b>New Purchase!</b>\n\n"
+            f"👤 <b>Buyer:</b> {user_display}\n"
+            f"📁 <b>Category:</b> {cat_name}\n"
+            f"🌍 <b>Country:</b> {flag} {country.title()}\n"
+            f"📱 <b>Number:</b> <code>{masked_phone}</code>\n"
+            f"💵 <b>Price Paid:</b> ${price:.2f} USDT"
+            f"{disc_line}\n\n"
+            f"⏰ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        log.warning("Could not post to log channel: %s", exc)
+
+
 PAGE_SIZE = 10
 MAX_DISPLAY_ITEMS = 20
 
@@ -1546,7 +1719,6 @@ async def cmd_buy(message: Message) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data="buy_cat_telegram"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary')],
-            [apply_button_style(InlineKeyboardButton(text="💬 WhatsApp SMS", callback_data=f"buy_cat_{CATEGORY_WHATSAPP_SMS}"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="back_main"), 'danger')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -1563,7 +1735,6 @@ async def cb_buy(query: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data="buy_cat_telegram"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary')],
-            [apply_button_style(InlineKeyboardButton(text="💬 WhatsApp SMS", callback_data=f"buy_cat_{CATEGORY_WHATSAPP_SMS}"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="back_main"), 'danger')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -1739,14 +1910,28 @@ async def cb_cat_country(query: CallbackQuery) -> None:
 
     await query.answer()
     available_count = len(products)
-    price = products[0].price  # All should have same price per country
+    price = Decimal(str(products[0].price))  # All should have same price per country
+
+    # Get user's applicable discount
+    user_id = query.from_user.id
+    async with AsyncSessionFactory() as disc_session:
+        u_res = await disc_session.execute(select(User).where(User.id == user_id))
+        u_obj = u_res.scalar_one_or_none()
+        total_dep = Decimal(str(u_obj.total_deposited or 0)) if u_obj else Decimal("0")
+        disc_pct = await get_applicable_discount(disc_session, user_id, total_dep)
+
+    if disc_pct > 0:
+        discounted_price = price * (1 - disc_pct / 100)
+        price_line = f"💰 <b>Price:</b> <s>${price:.2f}</s> → <b>${discounted_price:.2f} USDT</b> ({disc_pct:.0f}% off 🎉)\n"
+    else:
+        price_line = f"💰 <b>Price per Number:</b> ${price:.2f} USDT\n"
 
     await query.message.edit_text(
         f"🌍 <b>{get_country_flag(country)} {country.title()}</b>\n"
         f"📁 <b>Category:</b> {category_name}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📱 <b>Available Numbers:</b> {available_count}\n"
-        f"💰 <b>Price per Number:</b> ${price:.2f} USDT\n"
+        f"{price_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click <b>Buy Now</b> to purchase a random number from this pool.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1916,8 +2101,29 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
             )
             return
 
+        # Apply discount
+        base_price = Decimal(str(product.price))
+        total_deposited_user = Decimal(str(user.total_deposited or 0))
+        disc_pct = await get_applicable_discount(session, user_id, total_deposited_user)
+        actual_price = base_price * (1 - disc_pct / 100) if disc_pct > 0 else base_price
+
+        # Re-check balance with discounted price
+        if Decimal(str(user.balance)) < actual_price:
+            await query.message.edit_text(
+                f"❌ <b>Insufficient Balance</b>\n\n"
+                f"💰 Your balance: <b>${user.balance:.2f}</b>\n"
+                f"💵 Required: <b>${actual_price:.2f}</b>\n\n"
+                f"Please deposit funds first.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary')],
+                    [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"cat_country_{category}|{country}"), 'danger')],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
         # Process purchase
-        new_balance = Decimal(str(user.balance)) - Decimal(str(product.price))
+        new_balance = Decimal(str(user.balance)) - actual_price
         await session.execute(
             update(User)
             .where(User.id == user_id)
@@ -1940,14 +2146,14 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
             user_id=user_id,
             order_id=order.id,
             type="Purchase",
-            amount=product.price,
+            amount=actual_price,
             status="Completed",
         )
         session.add(txn)
         await session.commit()
 
         phone = product.phone_number
-        price = product.price
+        price = actual_price
         sess_str = product.session_string
         pid = product.id
 
@@ -1964,17 +2170,23 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
     if sess_str:
         await otp_manager.start_listener(pid, sess_str)
 
+    # Post to log channel
+    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
+    await post_to_log_channel(query.bot, user_display, category, country, price, phone, disc_pct)
+
     # Session string is only shown for Telegram Sessions category
     if category == CATEGORY_TELEGRAM_SESSIONS:
         session_line = format_session_preview(sess_str) + "\n"
     else:
         session_line = ""
 
+    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
         f"🎉 <b>Purchase Successful!</b>\n\n"
         f"📱 <b>Number:</b> <code>{phone}</code>\n"
         f"🌍 <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
         f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"{disc_line}"
         f"{session_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📋 <b>Next Steps:</b>\n"
@@ -2335,7 +2547,13 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
             )
             return
 
-        new_balance = Decimal(str(user.balance)) - Decimal(str(product.price))
+        # Apply discount
+        base_price = Decimal(str(product.price))
+        total_deposited_user = Decimal(str(user.total_deposited or 0))
+        disc_pct = await get_applicable_discount(session, user_id, total_deposited_user)
+        actual_price = base_price * (1 - disc_pct / 100) if disc_pct > 0 else base_price
+
+        new_balance = Decimal(str(user.balance)) - actual_price
         await session.execute(
             update(User)
             .where(User.id == user_id)
@@ -2349,13 +2567,13 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         await session.flush()
         txn = Transaction(
             user_id=user_id, order_id=order.id,
-            type="Purchase", amount=product.price, status="Completed",
+            type="Purchase", amount=actual_price, status="Completed",
         )
         session.add(txn)
         await session.commit()
 
         phone = product.phone_number
-        price = product.price
+        price = actual_price
         sess_str = product.session_string
         pid = product.id
 
@@ -2371,13 +2589,19 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
     if sess_str:
         await otp_manager.start_listener(pid, sess_str)
 
+    # Post to log channel
+    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
+    await post_to_log_channel(query.bot, user_display, CATEGORY_TELEGRAM_OLD, country, price, phone, disc_pct)
+
     # Old accounts show only OTP, not session string
+    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
         f"🎉 <b>Purchase Successful!</b>\n\n"
         f"📱 <b>Number:</b> <code>{phone}</code>\n"
         f"🌍 <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
         f"📅 <b>Year:</b> {year}\n"
         f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"{disc_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📋 <b>Next Steps:</b>\n"
         f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
@@ -2626,7 +2850,13 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
             )
             return
 
-        new_balance = Decimal(str(user.balance)) - Decimal(str(p.price))
+        # Apply discount
+        base_price = Decimal(str(p.price))
+        total_deposited_user = Decimal(str(user.total_deposited or 0))
+        disc_pct = await get_applicable_discount(session, user_id, total_deposited_user)
+        actual_price = base_price * (1 - disc_pct / 100) if disc_pct > 0 else base_price
+
+        new_balance = Decimal(str(user.balance)) - actual_price
         await session.execute(
             update(User).where(User.id == user_id).values(
                 balance=new_balance,
@@ -2641,12 +2871,12 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         await session.flush()
         txn = Transaction(
             user_id=user_id, order_id=order.id, type="Purchase",
-            amount=p.price, status="Completed",
+            amount=actual_price, status="Completed",
         )
         session.add(txn)
         await session.commit()
         phone = p.phone_number
-        price = p.price
+        price = actual_price
         country = p.country
         sess_str = p.session_string
         pid = p.id
@@ -2665,17 +2895,23 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
     if sess_str:
         await otp_manager.start_listener(pid, sess_str)
 
+    # Post to log channel
+    user_display = query.from_user.first_name or query.from_user.username or str(query.from_user.id)
+    await post_to_log_channel(query.bot, user_display, p_category, country, price, phone, disc_pct)
+
     # Session string is only shown for Telegram Sessions category
     if p_category == CATEGORY_TELEGRAM_SESSIONS:
         session_line = format_session_preview(sess_str) + "\n"
     else:
         session_line = ""
 
+    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
         f"🎉 <b>Purchase Successful!</b>\n\n"
         f"📱 <b>Number:</b> <code>{phone}</code>\n"
         f"🌍 <b>Country:</b> {get_country_flag(country)} {country}\n"
         f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"{disc_line}"
         f"{session_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>📋 Next Steps:</b>\n"
@@ -2859,15 +3095,20 @@ def admin_only(func):
 
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [apply_button_style(InlineKeyboardButton(text="➕ Add Number",     callback_data="admin_add_number"), 'primary')],
-        [apply_button_style(InlineKeyboardButton(text="📦 View Inventory", callback_data="admin_inventory_0"), 'primary')],
-        [apply_button_style(InlineKeyboardButton(text="📋 Pending Orders", callback_data="admin_orders"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="➕ Add Number",        callback_data="admin_add_number"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="📦 View Inventory",    callback_data="admin_inventory_0"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="📋 Pending Orders",    callback_data="admin_orders"), 'primary')],
         [
-            apply_button_style(InlineKeyboardButton(text="👥 Users",        callback_data="admin_users_0"), 'primary'),
-            apply_button_style(InlineKeyboardButton(text="🔍 Search User",  callback_data="admin_search_user"), 'primary'),
+            apply_button_style(InlineKeyboardButton(text="👥 Users",          callback_data="admin_users_0"), 'primary'),
+            apply_button_style(InlineKeyboardButton(text="🔍 Search User",    callback_data="admin_search_user"), 'primary'),
         ],
-        [apply_button_style(InlineKeyboardButton(text="📢 Broadcast",      callback_data="admin_broadcast"), 'primary')],
-        [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu",      callback_data="back_main"), 'danger')],
+        [
+            apply_button_style(InlineKeyboardButton(text="📊 Stats",          callback_data="admin_stats"), 'primary'),
+            apply_button_style(InlineKeyboardButton(text="🏷️ Discounts",      callback_data="admin_discount"), 'primary'),
+        ],
+        [apply_button_style(InlineKeyboardButton(text="🎁 Create Gift Code",  callback_data="admin_create_gift_code"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="📢 Broadcast",         callback_data="admin_broadcast"), 'primary')],
+        [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu",         callback_data="back_main"), 'danger')],
     ])
 
 
@@ -2892,6 +3133,224 @@ async def cb_admin_menu(query: CallbackQuery, state: FSMContext) -> None:
     )
 
 
+@router.callback_query(F.data == "admin_stats")
+@admin_only
+async def cb_admin_stats(query: CallbackQuery) -> None:
+    """Show comprehensive bot statistics."""
+    await query.answer()
+    from sqlalchemy import func
+    async with AsyncSessionFactory() as session:
+        # Total users
+        total_users_res = await session.execute(select(func.count(User.id)))
+        total_users = total_users_res.scalar() or 0
+
+        # Active users (not banned)
+        active_users_res = await session.execute(
+            select(func.count(User.id)).where(User.is_banned.is_(False))
+        )
+        active_users = active_users_res.scalar() or 0
+
+        # Total sell volume (sum of completed purchase transactions)
+        sell_vol_res = await session.execute(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.type == "Purchase", Transaction.status == "Completed"
+            )
+        )
+        sell_volume = sell_vol_res.scalar() or Decimal(0)
+
+        # Total deposited (OxaPay + blockchain)
+        dep_vol_res = await session.execute(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.type.in_(["OxaPayDeposit", "Deposit"]),
+                Transaction.status == "Completed",
+            )
+        )
+        total_deposited = dep_vol_res.scalar() or Decimal(0)
+
+        # Available numbers
+        avail_res = await session.execute(
+            select(func.count(Product.id)).where(Product.status == "Available")
+        )
+        available_numbers = avail_res.scalar() or 0
+
+        # Total numbers sold
+        sold_res = await session.execute(
+            select(func.count(Product.id)).where(Product.status == "Sold")
+        )
+        sold_numbers = sold_res.scalar() or 0
+
+        # Total orders
+        total_orders_res = await session.execute(
+            select(func.count(Order.id)).where(Order.status == "Completed")
+        )
+        total_orders = total_orders_res.scalar() or 0
+
+        # Banned users
+        banned_res = await session.execute(
+            select(func.count(User.id)).where(User.is_banned.is_(True))
+        )
+        banned_users = banned_res.scalar() or 0
+
+        # Discount tiers
+        tiers_res = await session.execute(
+            select(DiscountTier).order_by(DiscountTier.min_deposit)
+        )
+        tiers = tiers_res.scalars().all()
+
+        # Active gift codes
+        gift_res = await session.execute(
+            select(func.count(GiftCode.id)).where(GiftCode.is_active.is_(True))
+        )
+        active_gifts = gift_res.scalar() or 0
+
+    tiers_text = ""
+    if tiers:
+        tiers_text = "\n".join(
+            f"  • ${float(t.min_deposit):.0f}+ deposit → {float(t.discount_pct):.0f}% off"
+            for t in tiers
+        )
+    else:
+        tiers_text = "  No discount tiers set"
+
+    await query.message.edit_text(
+        f"📊 <b>Bot Statistics</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👥 <b>Users</b>\n"
+        f"  Total: <b>{total_users}</b>\n"
+        f"  Active: <b>{active_users}</b>\n"
+        f"  Banned: <b>{banned_users}</b>\n\n"
+        f"💰 <b>Financials</b>\n"
+        f"  Total Deposited: <b>${float(total_deposited):.2f} USDT</b>\n"
+        f"  Total Sell Volume: <b>${float(sell_volume):.2f} USDT</b>\n\n"
+        f"📱 <b>Numbers</b>\n"
+        f"  Available: <b>{available_numbers}</b>\n"
+        f"  Sold: <b>{sold_numbers}</b>\n"
+        f"  Total Orders: <b>{total_orders}</b>\n\n"
+        f"🏷️ <b>Discount Tiers</b>\n"
+        f"{tiers_text}\n\n"
+        f"🎁 <b>Active Gift Codes:</b> {active_gifts}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "admin_discount")
+@admin_only
+async def cb_admin_discount(query: CallbackQuery, state: FSMContext) -> None:
+    """Show current discount tiers and option to add new tier."""
+    await query.answer()
+    async with AsyncSessionFactory() as session:
+        tiers_res = await session.execute(
+            select(DiscountTier).order_by(DiscountTier.min_deposit)
+        )
+        tiers = tiers_res.scalars().all()
+
+    if tiers:
+        tiers_text = "\n".join(
+            f"  🏷️ ${float(t.min_deposit):.0f}+ deposit → <b>{float(t.discount_pct):.0f}% discount</b>"
+            for t in tiers
+        )
+    else:
+        tiers_text = "  <i>No discount tiers configured yet.</i>"
+
+    await query.message.edit_text(
+        f"🏷️ <b>Discount Management</b>\n\n"
+        f"<b>Current Discount Tiers:</b>\n{tiers_text}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"You can add a new discount tier below.\n"
+        f"Tiers are cumulative — users get the highest tier they qualify for.\n\n"
+        f"💡 <i>Example: Set 10% for $20+ and 20% for $50+</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [apply_button_style(InlineKeyboardButton(text="➕ Add Discount Tier", callback_data="admin_add_discount_tier"), 'primary')],
+            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger')],
+        ]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "admin_add_discount_tier")
+@admin_only
+async def cb_admin_add_discount_tier(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    await state.set_state(AdminDiscountState.discount_pct)
+    await query.message.edit_text(
+        "🏷️ <b>Add Discount Tier</b>\n\n"
+        "Step 1/2: Enter the <b>discount percentage</b>\n"
+        "Example: <code>10</code> for 10% discount",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminDiscountState.discount_pct)
+@admin_only
+async def fsm_discount_pct(message: Message, state: FSMContext) -> None:
+    try:
+        pct = Decimal(message.text.strip().replace("%", ""))
+        if pct <= 0 or pct >= 100:
+            raise ValueError
+    except Exception:
+        await message.answer(
+            "❌ Invalid percentage. Enter a number between 1 and 99 (e.g. 10):",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger'),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    await state.update_data(discount_pct=str(pct))
+    await state.set_state(AdminDiscountState.min_deposit)
+    await message.answer(
+        f"✅ Discount: <b>{pct:.0f}%</b>\n\n"
+        f"Step 2/2: Enter the <b>minimum deposit amount</b> (in USD)\n"
+        f"Users who have deposited this amount or more will get the discount.\n"
+        f"Example: <code>20</code> for users who deposited $20+",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminDiscountState.min_deposit)
+@admin_only
+async def fsm_discount_min_deposit(message: Message, state: FSMContext) -> None:
+    try:
+        min_dep = Decimal(message.text.strip().replace("$", ""))
+        if min_dep < 0:
+            raise ValueError
+    except Exception:
+        await message.answer(
+            "❌ Invalid amount. Enter a non-negative number (e.g. 20):",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger'),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    data = await state.get_data()
+    pct = Decimal(data["discount_pct"])
+    await state.clear()
+
+    async with AsyncSessionFactory() as session:
+        tier = DiscountTier(min_deposit=min_dep, discount_pct=pct)
+        session.add(tier)
+        await session.commit()
+
+    await message.answer(
+        f"✅ <b>Discount Tier Added!</b>\n\n"
+        f"🏷️ Users depositing <b>${min_dep:.0f}+</b> will get <b>{pct:.0f}% discount</b> on all purchases!",
+        reply_markup=build_admin_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 # ── Add Number FSM ────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_add_number")
@@ -2906,7 +3365,6 @@ async def cb_admin_add_number(query: CallbackQuery, state: FSMContext) -> None:
             [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="📱 Telegram Old Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary')],
-            [apply_button_style(InlineKeyboardButton(text="💬 WhatsApp SMS", callback_data=f"admin_add_cat_{CATEGORY_WHATSAPP_SMS}"), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_menu"), 'danger')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -3714,6 +4172,10 @@ async def _show_admin_user_detail(message: Message, user_id: int) -> None:
                     callback_data=f"admin_user_purchases_{user_id}",
                 ), 'primary'),
             ],
+            [apply_button_style(InlineKeyboardButton(
+                text="🏷️ Adjust Discount",
+                callback_data=f"admin_set_user_discount_{user_id}",
+            ), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="◀️ Back to Users", callback_data="admin_users_0"), 'danger')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -3981,6 +4443,10 @@ async def fsm_search_user(message: Message, state: FSMContext) -> None:
                     callback_data=f"admin_user_purchases_{u.id}",
                 ), 'primary'),
             ],
+            [apply_button_style(InlineKeyboardButton(
+                text="🏷️ Adjust Discount",
+                callback_data=f"admin_set_user_discount_{u.id}",
+            ), 'primary')],
             [apply_button_style(InlineKeyboardButton(text="◀️ Back to Admin", callback_data="admin_menu"), 'danger')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -3988,6 +4454,324 @@ async def fsm_search_user(message: Message, state: FSMContext) -> None:
 
 
 # ── My Purchases (user) ───────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("admin_set_user_discount_"))
+@admin_only
+async def cb_admin_set_user_discount(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    user_id = int(query.data.split("_")[-1])
+    await state.update_data(target_user_id=user_id)
+    await state.set_state(AdminUserDiscountState.discount_pct)
+    await query.message.edit_text(
+        f"🏷️ <b>Set Personal Discount for User {user_id}</b>\n\n"
+        f"Step 1/2: Enter the <b>discount percentage</b>\n"
+        f"Enter <code>0</code> to remove personal discount.\n"
+        f"Example: <code>15</code> for 15% discount",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data=f"admin_user_detail_{user_id}"), 'danger'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminUserDiscountState.discount_pct)
+@admin_only
+async def fsm_user_discount_pct(message: Message, state: FSMContext) -> None:
+    try:
+        pct = Decimal(message.text.strip().replace("%", ""))
+        if pct < 0 or pct >= 100:
+            raise ValueError
+    except Exception:
+        await message.answer(
+            "❌ Invalid percentage. Enter 0-99 (e.g. 15):",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if pct == 0:
+        data = await state.get_data()
+        target_uid = data["target_user_id"]
+        await state.clear()
+        async with AsyncSessionFactory() as session:
+            await session.execute(
+                delete(UserDiscount).where(UserDiscount.user_id == target_uid)
+            )
+            await session.commit()
+        await message.answer(
+            f"✅ Personal discount removed for user {target_uid}.",
+            reply_markup=build_admin_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await state.update_data(discount_pct=str(pct))
+    await state.set_state(AdminUserDiscountState.min_deposit)
+    await message.answer(
+        f"✅ Discount: <b>{pct:.0f}%</b>\n\n"
+        f"Step 2/2: Enter the <b>minimum deposit amount</b> (in USD)\n"
+        f"This discount applies when user has deposited this amount.\n"
+        f"Example: <code>0</code> for instant discount regardless of deposits",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminUserDiscountState.min_deposit)
+@admin_only
+async def fsm_user_discount_min_deposit(message: Message, state: FSMContext) -> None:
+    try:
+        min_dep = Decimal(message.text.strip().replace("$", ""))
+        if min_dep < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid amount. Enter a non-negative number:", parse_mode=ParseMode.HTML)
+        return
+
+    data = await state.get_data()
+    pct = Decimal(data["discount_pct"])
+    target_uid = data["target_user_id"]
+    await state.clear()
+
+    async with AsyncSessionFactory() as session:
+        existing_res = await session.execute(
+            select(UserDiscount).where(UserDiscount.user_id == target_uid)
+        )
+        existing = existing_res.scalar_one_or_none()
+        if existing:
+            await session.execute(
+                update(UserDiscount)
+                .where(UserDiscount.user_id == target_uid)
+                .values(discount_pct=pct, min_deposit=min_dep)
+            )
+        else:
+            ud = UserDiscount(user_id=target_uid, min_deposit=min_dep, discount_pct=pct)
+            session.add(ud)
+        await session.commit()
+
+    await message.answer(
+        f"✅ <b>Personal Discount Set!</b>\n\n"
+        f"User {target_uid} will get <b>{pct:.0f}% discount</b> on all purchases "
+        f"(min deposit: ${min_dep:.0f}).",
+        reply_markup=build_admin_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+    try:
+        await message.bot.send_message(
+            target_uid,
+            f"🎉 <b>Special Offer Just For You!</b>\n\n"
+            f"🏷️ You've been granted a <b>{pct:.0f}% personal discount</b> on all purchases!\n"
+            f"{'This applies to all your purchases.' if min_dep == 0 else f'This applies once you have deposited ${min_dep:.0f}+ in total.'}\n\n"
+            f"Start shopping now to enjoy your exclusive discount! 🛒",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        log.warning("Could not notify user %s of personal discount: %s", target_uid, exc)
+
+
+@router.callback_query(F.data == "admin_create_gift_code")
+@admin_only
+async def cb_admin_create_gift_code(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    await state.set_state(AdminCreateGiftCode.amount)
+    await query.message.edit_text(
+        "🎁 <b>Create Gift Code</b>\n\n"
+        "Step 1/3: Enter the <b>amount in USDT</b> to give\n"
+        "Example: <code>5.00</code>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_menu"), 'danger'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminCreateGiftCode.amount)
+@admin_only
+async def fsm_gift_code_amount(message: Message, state: FSMContext) -> None:
+    try:
+        amount = Decimal(message.text.strip().replace("$", ""))
+        if amount <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid amount. Enter a positive number like 5.00:", parse_mode=ParseMode.HTML)
+        return
+    await state.update_data(gift_amount=str(amount))
+    await state.set_state(AdminCreateGiftCode.max_claims)
+    await message.answer(
+        f"✅ Amount: <b>${amount:.2f} USDT</b>\n\n"
+        f"Step 2/3: Enter the <b>maximum number of claims</b>\n"
+        f"How many users can claim this code?\n"
+        f"Example: <code>100</code>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminCreateGiftCode.max_claims)
+@admin_only
+async def fsm_gift_code_max_claims(message: Message, state: FSMContext) -> None:
+    try:
+        max_claims = int(message.text.strip())
+        if max_claims <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid number. Enter a positive integer like 100:", parse_mode=ParseMode.HTML)
+        return
+    await state.update_data(max_claims=max_claims)
+    await state.set_state(AdminCreateGiftCode.min_buy_volume)
+    await message.answer(
+        f"✅ Max Claims: <b>{max_claims}</b>\n\n"
+        f"Step 3/3: Enter the <b>minimum total buying volume</b> required (in USDT)\n"
+        f"Enter <code>0</code> for no requirement.\n"
+        f"Example: <code>10</code> means user must have bought $10+ worth",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminCreateGiftCode.min_buy_volume)
+@admin_only
+async def fsm_gift_code_min_buy_volume(message: Message, state: FSMContext) -> None:
+    try:
+        min_vol = Decimal(message.text.strip().replace("$", ""))
+        if min_vol < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid amount. Enter 0 or a positive number:", parse_mode=ParseMode.HTML)
+        return
+
+    data = await state.get_data()
+    amount = Decimal(data["gift_amount"])
+    max_claims = data["max_claims"]
+    await state.clear()
+
+    code = secrets.token_hex(8).upper()
+
+    async with AsyncSessionFactory() as session:
+        gift = GiftCode(
+            code=code,
+            amount=amount,
+            max_claims=max_claims,
+            min_buy_volume=min_vol,
+        )
+        session.add(gift)
+        await session.commit()
+
+    min_vol_line = f"🛒 Min Purchase Volume: <b>${min_vol:.2f} USDT</b>" if min_vol > 0 else "🛒 Min Purchase Volume: <b>None</b>"
+    await message.answer(
+        f"✅ <b>Gift Code Created!</b>\n\n"
+        f"🎁 <b>Code:</b> <code>{code}</code>\n"
+        f"💰 <b>Amount:</b> ${amount:.2f} USDT per claim\n"
+        f"👥 <b>Max Claims:</b> {max_claims}\n"
+        f"{min_vol_line}\n\n"
+        f"Share this code with users: <code>/claim {code}</code>",
+        reply_markup=build_admin_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("claim"))
+async def cmd_claim(message: Message) -> None:
+    """Claim a gift code."""
+    from sqlalchemy import func
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "🎁 <b>Claim Gift Code</b>\n\n"
+            "Usage: <code>/claim YOUR_CODE</code>\n\n"
+            "Example: <code>/claim WELCOME2024</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    code_input = parts[1].strip().upper()
+    user_id = message.from_user.id
+
+    async with AsyncSessionFactory() as session:
+        code_res = await session.execute(
+            select(GiftCode).where(GiftCode.code == code_input, GiftCode.is_active.is_(True))
+        )
+        gift_code = code_res.scalar_one_or_none()
+
+        if gift_code is None:
+            await message.answer(
+                "❌ <b>Invalid Code</b>\n\n"
+                "This code doesn't exist or has expired. Please check and try again.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        if gift_code.claims_count >= gift_code.max_claims:
+            await message.answer(
+                "❌ <b>Code Exhausted</b>\n\n"
+                "This gift code has reached its maximum number of claims.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        already_res = await session.execute(
+            select(GiftCodeClaim).where(
+                GiftCodeClaim.code_id == gift_code.id,
+                GiftCodeClaim.user_id == user_id,
+            )
+        )
+        if already_res.scalar_one_or_none():
+            await message.answer(
+                "❌ <b>Already Claimed</b>\n\n"
+                "You have already claimed this gift code.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        if gift_code.min_buy_volume and Decimal(str(gift_code.min_buy_volume)) > 0:
+            buy_vol_res = await session.execute(
+                select(func.sum(Transaction.amount)).where(
+                    Transaction.user_id == user_id,
+                    Transaction.type == "Purchase",
+                    Transaction.status == "Completed",
+                )
+            )
+            buy_vol = buy_vol_res.scalar() or Decimal(0)
+            if Decimal(str(buy_vol)) < Decimal(str(gift_code.min_buy_volume)):
+                await message.answer(
+                    f"❌ <b>Requirements Not Met</b>\n\n"
+                    f"This code requires a minimum purchase volume of "
+                    f"<b>${float(gift_code.min_buy_volume):.2f} USDT</b>.\n\n"
+                    f"Your current purchase volume: <b>${float(buy_vol):.2f} USDT</b>",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
+
+        amount = Decimal(str(gift_code.amount))
+        await session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(balance=User.balance + amount)
+        )
+
+        claim = GiftCodeClaim(code_id=gift_code.id, user_id=user_id)
+        session.add(claim)
+
+        new_claims = gift_code.claims_count + 1
+        updates: dict = {"claims_count": new_claims}
+        if new_claims >= gift_code.max_claims:
+            updates["is_active"] = False
+        await session.execute(
+            update(GiftCode).where(GiftCode.id == gift_code.id).values(**updates)
+        )
+
+        txn = Transaction(
+            user_id=user_id, type="GiftCode",
+            amount=amount, tx_hash=code_input, status="Completed",
+        )
+        session.add(txn)
+        await session.commit()
+
+    await message.answer(
+        f"🎉 <b>Gift Code Claimed!</b>\n\n"
+        f"🎁 Code: <code>{code_input}</code>\n"
+        f"💰 Amount Added: <b>${amount:.2f} USDT</b>\n\n"
+        f"Your balance has been updated! 🚀",
+        parse_mode=ParseMode.HTML,
+    )
+
 
 @router.callback_query(F.data == "my_purchases")
 async def cb_my_purchases(query: CallbackQuery) -> None:
