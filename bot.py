@@ -69,6 +69,7 @@ BNB_CONFIRMATION_WAIT_SECONDS = 5
 REFERRAL_COMMISSION_PCT = 1.5
 SUPPORT_USERNAME = "jashanxjagy"  # Without @ prefix (added in URLs)
 LOG_CHANNEL = ""  # Add your channel username here (without @), e.g. "mychannel"
+GIFT_CODE_BYTES = 8  # Number of random bytes used to generate gift codes (8 bytes = 16-char hex code)
 DATABASE_URL = "sqlite+aiosqlite:///marketplace.db"
 BLOCKCHAIN_STATE_FILE = "blockchain_state.json"
 FERNET_KEY = "m8gzSFYcYk41uYxNUqCwpn-YGvo1_sVwDNTg-2FgBTg="
@@ -1687,8 +1688,9 @@ async def post_to_log_channel(bot: Bot, user_display: str, category: str, countr
     try:
         cat_name = PRODUCT_CATEGORIES.get(category, category)
         flag = get_country_flag(country)
-        # Show only first 3 and last 2 chars of the number for privacy
-        masked_phone = phone_number[:3] + "X" * max(0, len(phone_number) - 5) + phone_number[-2:] if len(phone_number) > 5 else "X" * len(phone_number)
+        # Show only first half of the number for privacy
+        half = max(3, len(phone_number) // 2)
+        masked_phone = phone_number[:half] + "X" * (len(phone_number) - half)
         disc_line = f"\n🏷️ <b>Discount Applied:</b> {discount_pct:.0f}%" if discount_pct > 0 else ""
         await bot.send_message(
             f"@{LOG_CHANNEL}",
@@ -3293,10 +3295,10 @@ async def fsm_discount_pct(message: Message, state: FSMContext) -> None:
     try:
         pct = Decimal(message.text.strip().replace("%", ""))
         if pct <= 0 or pct >= 100:
-            raise ValueError
-    except Exception:
+            raise ValueError("out_of_range")
+    except (ValueError, InvalidOperation):
         await message.answer(
-            "❌ Invalid percentage. Enter a number between 1 and 99 (e.g. 10):",
+            "❌ Invalid percentage. Enter a whole number between 1 and 99 (e.g. 10):",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger'),
             ]]),
@@ -4642,7 +4644,7 @@ async def fsm_gift_code_min_buy_volume(message: Message, state: FSMContext) -> N
     max_claims = data["max_claims"]
     await state.clear()
 
-    code = secrets.token_hex(8).upper()
+    code = secrets.token_hex(GIFT_CODE_BYTES).upper()
 
     async with AsyncSessionFactory() as session:
         gift = GiftCode(
