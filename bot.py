@@ -805,9 +805,12 @@ class OTPSessionManager:
     """
     Manages one Pyrogram client per product.
     Provides:
-      - start_listener(product_id, session_string)  → background live listener
-      - fetch_otp_now(product_id, session_string)    → on-demand history scan
-      - shutdown()                                    → clean up all clients
+      - start_listener(product_id, session_file_data)  → background live listener
+      - fetch_otp_now(product_id, session_file_data)    → on-demand history scan
+      - shutdown()                                       → clean up all clients
+
+    Each client uses a temp .session file written from the stored bytes.
+    The temp file is deleted when the client stops.
     """
 
     def __init__(self):
@@ -817,14 +820,31 @@ class OTPSessionManager:
         self._tasks: dict[int, asyncio.Task] = {}
         # Lock per product to avoid duplicate client starts
         self._locks: dict[int, asyncio.Lock] = {}
+        # product_id → temp .session file path (deleted on client stop)
+        self._temp_files: dict[int, str] = {}
 
     def _get_lock(self, product_id: int) -> asyncio.Lock:
         if product_id not in self._locks:
             self._locks[product_id] = asyncio.Lock()
         return self._locks[product_id]
 
+    def _cleanup_temp_file(self, product_id: int) -> None:
+        """Delete the temp .session file (and WAL/SHM companions) for a product."""
+        tmp_path = self._temp_files.pop(product_id, None)
+        if tmp_path:
+            for suffix in ("", "-wal", "-shm"):
+                path = tmp_path + suffix
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception as exc:
+                    log.warning(
+                        "[OTP %s] Could not delete temp file %s: %s",
+                        product_id, path, exc,
+                    )
+
     async def _get_or_create_client(
-        self, product_id: int, session_string: str
+        self, product_id: int, session_file_data: bytes
     ) -> Optional["PyroClient"]:
         """Return a connected Pyrogram client, creating one if needed."""
         if not PYROGRAM_AVAILABLE:
@@ -833,8 +853,8 @@ class OTPSessionManager:
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             log.error("[OTP %s] TELEGRAM_API_ID / TELEGRAM_API_HASH not set", product_id)
             return None
-        if not session_string or len(session_string.strip()) < 20:
-            log.error("[OTP %s] Session string is empty or too short", product_id)
+        if not session_file_data:
+            log.error("[OTP %s] Session file data is empty", product_id)
             return None
 
         async with self._get_lock(product_id):
@@ -849,12 +869,22 @@ class OTPSessionManager:
                 # Dead client – remove and recreate
                 await self._stop_client(product_id)
 
+            # Write session bytes to a temp file.
+            # The per-product lock above ensures only one coroutine reaches
+            # this point for a given product_id at a time.
+            tmp_path = f"temp_otp_{product_id}.session"
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(session_file_data)
+            except Exception as exc:
+                log.error("[OTP %s] Failed to write temp session file: %s", product_id, exc)
+                return None
+            self._temp_files[product_id] = tmp_path
+
             client = PyroClient(
-                name=f"otp_{product_id}",
+                name=f"temp_otp_{product_id}",
                 api_id=TELEGRAM_API_ID,
                 api_hash=TELEGRAM_API_HASH,
-                session_string=session_string.strip(),
-                in_memory=True,
                 no_updates=False,
             )
 
@@ -877,6 +907,7 @@ class OTPSessionManager:
                     await client.stop()
                 except Exception:
                     pass
+                self._cleanup_temp_file(product_id)
                 return None
 
     async def _stop_client(self, product_id: int) -> None:
@@ -887,10 +918,13 @@ class OTPSessionManager:
                 log.info("[OTP %s] Client stopped", product_id)
             except Exception as exc:
                 log.warning("[OTP %s] Error stopping client: %s", product_id, exc)
+        # Small delay so SQLite releases WAL/SHM locks before we delete
+        await asyncio.sleep(0.1)
+        self._cleanup_temp_file(product_id)
 
     # ── Live background listener ──────────────────────────────────────────
 
-    async def start_listener(self, product_id: int, session_string: str) -> None:
+    async def start_listener(self, product_id: int, session_file_data: bytes) -> None:
         """
         Spawn a background task that keeps a Pyrogram client alive and
         watches for OTP messages from 777000 for up to _LISTENER_LIFETIME.
@@ -901,7 +935,7 @@ class OTPSessionManager:
             old_task.cancel()
             await asyncio.sleep(0.1)
 
-        task = asyncio.create_task(self._listener_loop(product_id, session_string))
+        task = asyncio.create_task(self._listener_loop(product_id, session_file_data))
         self._tasks[product_id] = task
 
         def _on_done(t: asyncio.Task):
@@ -913,7 +947,7 @@ class OTPSessionManager:
         task.add_done_callback(_on_done)
         log.info("[OTP %s] Listener task spawned", product_id)
 
-    async def _listener_loop(self, product_id: int, session_string: str) -> None:
+    async def _listener_loop(self, product_id: int, session_file_data: bytes) -> None:
         """
         Core listener loop.  Strategy:
           1. Connect the client.
@@ -923,7 +957,7 @@ class OTPSessionManager:
              (Polling is far more reliable than Pyrogram's on_message handler
               because it doesn't depend on update ordering or gaps.)
         """
-        client = await self._get_or_create_client(product_id, session_string)
+        client = await self._get_or_create_client(product_id, session_file_data)
         if client is None:
             return
 
@@ -936,7 +970,7 @@ class OTPSessionManager:
             try:
                 if not client.is_connected:
                     log.warning("[OTP %s] Client disconnected mid-listen, reconnecting…", product_id)
-                    client = await self._get_or_create_client(product_id, session_string)
+                    client = await self._get_or_create_client(product_id, session_file_data)
                     if client is None:
                         return
                 await self._scan_and_store(product_id, client)
@@ -1015,7 +1049,7 @@ class OTPSessionManager:
     # ── On-demand OTP fetch (called when user taps "Get OTP") ─────────────
 
     async def fetch_otp_now(
-        self, product_id: int, session_string: str
+        self, product_id: int, session_file_data: bytes
     ) -> tuple[Optional[str], str]:
         """
         Actively fetch the latest OTP right now.
@@ -1027,10 +1061,10 @@ class OTPSessionManager:
             return None, "Pyrogram is not installed on the server."
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             return None, "Telegram API credentials are not configured."
-        if not session_string or len(session_string.strip()) < 20:
-            return None, "No valid session string for this number."
+        if not session_file_data:
+            return None, "No session file configured for this number."
 
-        client = await self._get_or_create_client(product_id, session_string)
+        client = await self._get_or_create_client(product_id, session_file_data)
         if client is None:
             return None, "Could not connect to Telegram for this number."
 
@@ -1074,6 +1108,9 @@ class OTPSessionManager:
                 task.cancel()
         for pid in list(self._clients.keys()):
             await self._stop_client(pid)
+        # Clean up any remaining temp files (e.g. from failed connections)
+        for pid in list(self._temp_files.keys()):
+            self._cleanup_temp_file(pid)
         self._tasks.clear()
         self._locks.clear()
         log.info("OTPSessionManager shutdown complete.")
@@ -2582,7 +2619,6 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
 
         phone = product.phone_number
         price = actual_price
-        sess_str = product.session_string
         sess_file_data = product.session_file_data
         twofa_enc = product.twofa_password
         pid = product.id
@@ -2596,9 +2632,9 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         )
         await session.commit()
 
-    # Start the background OTP listener via the manager
-    if sess_str:
-        await otp_manager.start_listener(pid, sess_str)
+    # Start the background OTP listener via the manager (accounts only)
+    if category != CATEGORY_TELEGRAM_SESSIONS and sess_file_data:
+        await otp_manager.start_listener(pid, sess_file_data)
 
     # Post to log channel
     _uname = query.from_user.username
@@ -3045,7 +3081,7 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
 
         phone = product.phone_number
         price = actual_price
-        sess_str = product.session_string
+        sess_file_data = product.session_file_data
         twofa_enc = product.twofa_password
         pid = product.id
 
@@ -3058,8 +3094,8 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         )
         await session.commit()
 
-    if sess_str:
-        await otp_manager.start_listener(pid, sess_str)
+    if sess_file_data:
+        await otp_manager.start_listener(pid, sess_file_data)
 
     # Post to log channel
     _uname = query.from_user.username
@@ -3407,10 +3443,6 @@ async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
         country_name = prem_order.country
         price = Decimal(str(prem_order.price))
         pid = product.id
-
-    # Start OTP listener
-    if sess_str:
-        await otp_manager.start_listener(pid, sess_str)
 
     # Notify user
     flag = get_country_flag(country_name)
@@ -3772,7 +3804,6 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         phone = p.phone_number
         price = actual_price
         country = p.country
-        sess_str = p.session_string
         sess_file_data = p.session_file_data
         twofa_enc = p.twofa_password
         pid = p.id
@@ -3787,9 +3818,9 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         )
         await session.commit()
 
-    # Start the background OTP listener via the manager
-    if sess_str:
-        await otp_manager.start_listener(pid, sess_str)
+    # Start the background OTP listener via the manager (accounts only)
+    if p_category != CATEGORY_TELEGRAM_SESSIONS and sess_file_data:
+        await otp_manager.start_listener(pid, sess_file_data)
 
     # Post to log channel
     _uname = query.from_user.username
@@ -3891,11 +3922,11 @@ async def cb_getotp(query: CallbackQuery) -> None:
         )
         return
 
-    if not p.session_string:
+    if not p.session_file_data:
         await _safe_edit(
             query.message,
             "❌ <b>OTP fetch unavailable.</b>\n\n"
-            "No session string is configured for this number. "
+            "No session file is configured for this number. "
             "Please contact support.",
             InlineKeyboardMarkup(inline_keyboard=[[
                 apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
@@ -3904,7 +3935,7 @@ async def cb_getotp(query: CallbackQuery) -> None:
         return
 
     # Active on-demand fetch via the OTP manager
-    otp_code, status_msg = await otp_manager.fetch_otp_now(product_id, p.session_string)
+    otp_code, status_msg = await otp_manager.fetch_otp_now(product_id, p.session_file_data)
 
     if otp_code:
         await _safe_edit(
@@ -6433,42 +6464,56 @@ async def _check_pending_oxapay_payments(bot: Bot) -> None:
 admin_router = Router()
 
 
-async def check_2fa_with_pyrogram(session_string: str) -> bool:
+async def check_2fa_with_session_file(phone: str, session_bytes: bytes) -> bool:
     """Return True if the Telegram account has 2FA enabled.
 
-    Uses a Pyrogram in-memory client with the given session string and queries
-    the raw GetPassword RPC.  Returns False on any error or when Pyrogram is
-    not installed.
+    Writes the session bytes to a uniquely named temporary file, starts a
+    Pyrogram Client from it, and queries the raw GetPassword RPC.  The temp
+    file (and any SQLite WAL/SHM companions) is deleted afterwards.
+    Returns False on any error or when Pyrogram is not installed.
     """
     if not PYROGRAM_AVAILABLE:
         return False
+    # Use a UUID-based name so concurrent checks for different phones
+    # never collide and the path is not guessable.
+    tmp_stem = f"temp_admin_check_{uuid.uuid4().hex}"
+    tmp_path = f"{tmp_stem}.session"
     try:
+        with open(tmp_path, "wb") as f:
+            f.write(session_bytes)
         from pyrogram.raw.functions.account import GetPassword  # type: ignore
         async with PyroClient(
-            name="2fa_check",
+            name=tmp_stem,
             api_id=TELEGRAM_API_ID,
             api_hash=TELEGRAM_API_HASH,
-            session_string=session_string,
-            in_memory=True,
             no_updates=True,
         ) as client:
             pwd = await client.invoke(GetPassword())
             return bool(pwd.has_password)
     except Exception as exc:
-        log.warning("2FA check via Pyrogram failed: %s", exc)
+        log.warning("2FA check via Pyrogram failed for %s: %s", phone, exc)
         return False
+    finally:
+        for suffix in ("", "-wal", "-shm"):
+            path = tmp_path + suffix
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as exc:
+                log.warning("Could not delete temp 2FA check file %s: %s", path, exc)
 
 
 async def _ingest_dual_records(
     phone: str,
-    session_file_bytes: Optional[bytes],
-    session_string_content: Optional[str],
+    session_file_bytes: bytes,
     twofa_enc: Optional[str],
     default_price: Decimal,
     country: str,
 ) -> tuple[int, list[str]]:
     """Insert a Session record AND an Account record for *phone* into the DB.
 
+    Both records store the .session file bytes.  The Account record also
+    stores the (optionally encrypted) 2FA password.
     Skips whichever (phone, category) pair already exists.
     Returns (number_of_new_records_added, [summary_line, ...]).
     """
@@ -6478,52 +6523,48 @@ async def _ingest_dual_records(
 
     async with AsyncSessionFactory() as db:
         # ── Session record ──────────────────────────────────────────────────
-        if session_file_bytes:
-            existing_sess = await db.execute(
-                select(Product).where(
-                    Product.phone_number == phone,
-                    Product.category == CATEGORY_TELEGRAM_SESSIONS,
-                )
+        existing_sess = await db.execute(
+            select(Product).where(
+                Product.phone_number == phone,
+                Product.category == CATEGORY_TELEGRAM_SESSIONS,
             )
-            if existing_sess.scalar_one_or_none():
-                lines.append(f"⚠️ {phone} (session) — already in DB, skipped")
-            else:
-                db.add(Product(
-                    category=CATEGORY_TELEGRAM_SESSIONS,
-                    country=country,
-                    phone_number=phone,
-                    price=default_price,
-                    session_file_data=session_file_bytes,
-                    session_string=None,
-                    twofa_password=None,
-                    status="Available",
-                ))
-                added += 1
-                lines.append(f"✅ {phone} (session) — {flag} {country.title()}")
+        )
+        if existing_sess.scalar_one_or_none():
+            lines.append(f"⚠️ {phone} (session) — already in DB, skipped")
+        else:
+            db.add(Product(
+                category=CATEGORY_TELEGRAM_SESSIONS,
+                country=country,
+                phone_number=phone,
+                price=default_price,
+                session_file_data=session_file_bytes,
+                twofa_password=None,
+                status="Available",
+            ))
+            added += 1
+            lines.append(f"✅ {phone} (session) — {flag} {country.title()}")
 
         # ── Account record ──────────────────────────────────────────────────
-        if session_string_content:
-            existing_acc = await db.execute(
-                select(Product).where(
-                    Product.phone_number == phone,
-                    Product.category == CATEGORY_TELEGRAM_ACCOUNTS,
-                )
+        existing_acc = await db.execute(
+            select(Product).where(
+                Product.phone_number == phone,
+                Product.category == CATEGORY_TELEGRAM_ACCOUNTS,
             )
-            if existing_acc.scalar_one_or_none():
-                lines.append(f"⚠️ {phone} (account) — already in DB, skipped")
-            else:
-                db.add(Product(
-                    category=CATEGORY_TELEGRAM_ACCOUNTS,
-                    country=country,
-                    phone_number=phone,
-                    price=default_price,
-                    session_string=session_string_content,
-                    session_file_data=None,
-                    twofa_password=twofa_enc,
-                    status="Available",
-                ))
-                added += 1
-                lines.append(f"✅ {phone} (account) — {flag} {country.title()}")
+        )
+        if existing_acc.scalar_one_or_none():
+            lines.append(f"⚠️ {phone} (account) — already in DB, skipped")
+        else:
+            db.add(Product(
+                category=CATEGORY_TELEGRAM_ACCOUNTS,
+                country=country,
+                phone_number=phone,
+                price=default_price,
+                session_file_data=session_file_bytes,
+                twofa_password=twofa_enc,
+                status="Available",
+            ))
+            added += 1
+            lines.append(f"✅ {phone} (account) — {flag} {country.title()}")
 
         try:
             await db.commit()
@@ -6549,12 +6590,16 @@ async def _ingest_session_bytes(
     if not phone:
         return 0, []
     country = detect_country_from_phone(phone)
-    return await _ingest_dual_records(phone, file_bytes, None, None, default_price, country)
+    return await _ingest_dual_records(phone, file_bytes, None, default_price, country)
 
 
 @admin_router.message(F.document)
 async def admin_ingest_file(message: Message, state: FSMContext) -> None:
-    """Step 1: Receive .zip or .session file, store in FSM state, ask for 2FA password."""
+    """Receive .zip or .session file, check 2FA, and insert dual DB records.
+
+    If 2FA is detected on any account, pauses to ask the admin for the
+    password before inserting.  If no account has 2FA, inserts immediately.
+    """
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -6568,7 +6613,7 @@ async def admin_ingest_file(message: Message, state: FSMContext) -> None:
         await message.answer("❌ Please upload a <b>.session</b> or <b>.zip</b> file.", parse_mode=ParseMode.HTML)
         return
 
-    await message.answer("⏳ Downloading file…")
+    await message.answer("⏳ Downloading and analysing file…")
 
     try:
         buf = io.BytesIO()
@@ -6579,18 +6624,96 @@ async def admin_ingest_file(message: Message, state: FSMContext) -> None:
         await message.answer(f"❌ Failed to download file: {exc}")
         return
 
-    await state.update_data(zip_bytes=raw_bytes, zip_filename=doc.file_name)
-    await state.set_state(ZipIngest.waiting_for_2fa)
-    await message.answer(
-        "Enter the 2FA password to use for this batch if Two-Step Verification is "
-        "enabled (Send <b>None</b> if there is no password):",
-        parse_mode=ParseMode.HTML,
-    )
+    default_price = await get_default_session_price()
+
+    # Build list of (phone, session_bytes, country) from the upload
+    sessions: list[tuple[str, bytes, str]] = []
+
+    if fname_lower.endswith(".session"):
+        phone = re.sub(r"\D", "", os.path.splitext(doc.file_name)[0])
+        if not phone:
+            await message.answer("⚠️ Could not extract a phone number from the filename.")
+            return
+        country = detect_country_from_phone(phone)
+        sessions.append((phone, raw_bytes, country))
+
+    elif fname_lower.endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                for entry in zf.infolist():
+                    name = entry.filename
+                    base = os.path.basename(name)
+                    if base.lower().endswith(".session"):
+                        phone = re.sub(r"\D", "", os.path.splitext(base)[0])
+                        if phone:
+                            try:
+                                session_bytes = zf.read(name)
+                                country = detect_country_from_phone(phone)
+                                sessions.append((phone, session_bytes, country))
+                            except Exception as exc:
+                                await message.answer(f"❌ {base} — read error: {exc}")
+        except zipfile.BadZipFile:
+            await message.answer("❌ Invalid ZIP file.")
+            return
+        except Exception as exc:
+            log.error("Error processing ZIP: %s", exc)
+            await message.answer(f"❌ Error processing ZIP: {exc}")
+            return
+
+    if not sessions:
+        await message.answer("⚠️ No valid <b>.session</b> files found.", parse_mode=ParseMode.HTML)
+        return
+
+    await message.answer(f"⏳ Checking 2FA for {len(sessions)} account(s)…")
+
+    # Check 2FA for each .session file
+    accounts_with_2fa: list[str] = []
+    account_data: list[dict] = []
+    for phone, s_bytes, country in sessions:
+        has_2fa = await check_2fa_with_session_file(phone, s_bytes)
+        account_data.append({"phone": phone, "bytes": s_bytes, "country": country, "has_2fa": has_2fa})
+        if has_2fa:
+            accounts_with_2fa.append(phone)
+
+    if accounts_with_2fa:
+        # Pause and ask admin for 2FA password; resume in admin_ingest_2fa_password
+        await state.update_data(
+            account_data=account_data,
+            default_price=str(default_price),
+        )
+        await state.set_state(ZipIngest.waiting_for_2fa)
+        phone_list = "\n".join(f"  • {p}" for p in accounts_with_2fa)
+        await message.answer(
+            f"🔐 <b>2FA detected on {len(accounts_with_2fa)} account(s):</b>\n{phone_list}\n\n"
+            f"Please send the <b>2FA password</b> for these accounts "
+            f"(it will be applied to all 2FA accounts in this batch).",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        # No 2FA detected — insert all records immediately
+        total_added = 0
+        summary_lines: list[str] = []
+        for item in account_data:
+            added, lines = await _ingest_dual_records(
+                item["phone"], item["bytes"], None, default_price, item["country"]
+            )
+            total_added += added
+            summary_lines.extend(lines)
+
+        lines_text = "\n".join(summary_lines[:50])
+        extra = f"\n…and {len(summary_lines) - 50} more" if len(summary_lines) > 50 else ""
+        await message.answer(
+            f"<b>Ingestion complete</b>\n\n"
+            f"✅ Added: <b>{total_added}</b> record(s)\n"
+            f"Default price: <b>${default_price:.2f} USDT</b>\n\n"
+            f"{lines_text}{extra}",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 @admin_router.message(ZipIngest.waiting_for_2fa)
 async def admin_ingest_2fa_password(message: Message, state: FSMContext) -> None:
-    """Step 2: Receive 2FA password, process file, insert dual DB records."""
+    """Receive 2FA password and complete batch ingestion."""
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -6602,90 +6725,25 @@ async def admin_ingest_2fa_password(message: Message, state: FSMContext) -> None
     data = await state.get_data()
     await state.clear()
 
-    raw_bytes: Optional[bytes] = data.get("zip_bytes")
-    filename: str = data.get("zip_filename", "upload.zip")
-    if not raw_bytes:
-        await message.answer("❌ No file data found. Please upload the file again.")
+    account_data: list[dict] = data.get("account_data", [])
+    default_price = Decimal(data.get("default_price", "1.00"))
+
+    if not account_data:
+        await message.answer("❌ No account data found. Please upload the file again.")
         return
 
-    fname_lower = filename.lower()
-    default_price = await get_default_session_price()
+    await message.answer("⏳ Inserting accounts into database…")
+
     total_added = 0
     summary_lines: list[str] = []
-
-    await message.answer("⏳ Processing file and checking 2FA…")
-
-    if fname_lower.endswith(".session"):
-        phone = re.sub(r"\D", "", os.path.splitext(filename)[0])
-        if not phone:
-            await message.answer("⚠️ Could not extract a phone number from the filename.")
-            return
-        country = detect_country_from_phone(phone)
-        added, lines = await _ingest_dual_records(phone, raw_bytes, None, twofa_enc, default_price, country)
+    for item in account_data:
+        # Only apply 2FA password to accounts that actually have 2FA enabled
+        effective_twofa_enc = twofa_enc if item["has_2fa"] else None
+        added, lines = await _ingest_dual_records(
+            item["phone"], item["bytes"], effective_twofa_enc, default_price, item["country"]
+        )
         total_added += added
         summary_lines.extend(lines)
-
-    elif fname_lower.endswith(".zip"):
-        try:
-            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
-                # Build maps: phone -> session bytes, phone -> session string content
-                session_map: dict[str, bytes] = {}
-                string_map: dict[str, str] = {}
-
-                for entry in zf.infolist():
-                    name = entry.filename
-                    base = os.path.basename(name)
-
-                    if base.lower().endswith(".session"):
-                        phone = re.sub(r"\D", "", os.path.splitext(base)[0])
-                        if phone:
-                            try:
-                                session_map[phone] = zf.read(name)
-                            except Exception as exc:
-                                summary_lines.append(f"❌ {base} — read error: {exc}")
-
-                    elif (
-                        base.lower().endswith(".txt")
-                        and "sesi_string" in name.replace("\\", "/").lower()
-                    ):
-                        phone = re.sub(r"\D", "", os.path.splitext(base)[0])
-                        if phone:
-                            try:
-                                string_map[phone] = zf.read(name).decode("utf-8", errors="ignore").strip()
-                            except Exception as exc:
-                                summary_lines.append(f"❌ {base} — read error: {exc}")
-
-                # Gather all phone numbers seen in either map
-                all_phones = set(session_map) | set(string_map)
-
-                for phone in sorted(all_phones):
-                    s_bytes = session_map.get(phone)
-                    s_str = string_map.get(phone)
-                    country = detect_country_from_phone(phone)
-
-                    # Check 2FA via session string if available and a password was supplied
-                    effective_twofa_enc = twofa_enc
-                    if s_str and twofa_enc:
-                        has_2fa = await check_2fa_with_pyrogram(s_str)
-                        effective_twofa_enc = twofa_enc if has_2fa else None
-
-                    added, lines = await _ingest_dual_records(
-                        phone, s_bytes, s_str, effective_twofa_enc, default_price, country
-                    )
-                    total_added += added
-                    summary_lines.extend(lines)
-
-        except zipfile.BadZipFile:
-            await message.answer("❌ Invalid ZIP file.")
-            return
-        except Exception as exc:
-            log.error("Error processing ZIP: %s", exc)
-            await message.answer(f"❌ Error processing ZIP: {exc}")
-            return
-
-    if not summary_lines:
-        await message.answer("⚠️ No valid <b>.session</b> or <b>.txt</b> files found.", parse_mode=ParseMode.HTML)
-        return
 
     lines_text = "\n".join(summary_lines[:50])
     extra = f"\n…and {len(summary_lines) - 50} more" if len(summary_lines) > 50 else ""
