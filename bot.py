@@ -460,24 +460,24 @@ def get_welcome_text(first_name: str, balance: Decimal) -> str:
 def get_help_text() -> str:
     """Generate comprehensive help text."""
     return (
-        "📖 <b>Complete Guide to Our Bot</b>\n\n"
+        "<tg-emoji emoji-id='5305265301917549162'>📖</tg-emoji> <b>Complete Guide to Our Bot</b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "💎 <b>1. DEPOSIT FUNDS</b>\n"
-        "• Tap 📥 Deposit → OxaPay Crypto\n"
+        "<tg-emoji emoji-id='5427168083074628963'>💎</tg-emoji> <b>1. DEPOSIT FUNDS</b>\n"
+        "• Tap <tg-emoji emoji-id='5427168083074628963'>💎</tg-emoji> Deposit → OxaPay Crypto\n"
         "• Select an amount or enter custom\n"
         "• Complete payment via crypto\n"
         "• Balance updates automatically!\n\n"
-        "🛒 <b>2. BUY ACCOUNTS</b>\n"
-        "• Tap 🛍️ Buy Accounts\n"
+        "<tg-emoji emoji-id='5406683434124859552'>🛒</tg-emoji> <b>2. BUY ACCOUNTS</b>\n"
+        "• Tap <tg-emoji emoji-id='5406683434124859552'>🛍️</tg-emoji> Buy Accounts\n"
         "• Choose category (Telegram)\n"
         "• Select a country from the list\n"
         "• Tap Buy Now if balance is sufficient\n\n"
-        "📲 <b>3. GET YOUR OTP</b>\n"
+        "<tg-emoji emoji-id='5253742260054409879'>📲</tg-emoji> <b>3. GET YOUR OTP</b>\n"
         "• After purchase, use the number in Telegram\n"
         "• Request login code in Telegram app\n"
-        "• Come back & tap 🔄 Get OTP\n"
+        "• Come back & tap Get OTP\n"
         "• Code appears instantly!\n\n"
-        "🎁 <b>4. GIFT CODES</b>\n"
+        "<tg-emoji emoji-id='5242311354919963946'>🎁</tg-emoji> <b>4. GIFT CODES</b>\n"
         "• Use <code>/claim CODE</code> to redeem a gift code\n"
         "• Gift codes add balance to your account instantly!\n"
         "• Check back regularly for special codes\n\n"
@@ -485,15 +485,15 @@ def get_help_text() -> str:
         f"• Earn {REFERRAL_COMMISSION_PCT}% on referral deposits\n"
         "• Share your unique link\n"
         "• Track earnings in Referral section\n\n"
-        "👤 <b>6. PROFILE</b>\n"
+        "<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>6. PROFILE</b>\n"
         "• View your complete statistics\n"
         "• Check purchase history\n"
         "• Monitor bonus earnings\n\n"
-        "🏷️ <b>7. DISCOUNTS</b>\n"
+        "<tg-emoji emoji-id='5427168083074628963'>🏷️</tg-emoji> <b>7. DISCOUNTS</b>\n"
         "• Deposit more to unlock exclusive discounts!\n"
         "• Discounts are applied automatically at checkout\n"
         "• The more you deposit, the bigger the discount!\n\n"
-        "🆘 <b>NEED HELP?</b>\n"
+        "<tg-emoji emoji-id='5253742260054409879'>🆘</tg-emoji> <b>NEED HELP?</b>\n"
         f"Contact: @{SUPPORT_USERNAME}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━"
     )
@@ -1097,23 +1097,23 @@ async def cb_profile(query: CallbackQuery) -> None:
     joined = user.created_at.strftime("%Y-%m-%d") if user.created_at else "N/A"
     
     await query.message.edit_text(
-        f"👤 <b>Your Profile</b>\n\n"
+        f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>Your Profile</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 <b>User ID:</b> <code>{user.id}</code>\n"
         f"📛 <b>Name:</b> {first_name}\n"
-        f"👤 <b>Username:</b> @{user.username or 'Not set'}\n"
+        f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>Username:</b> @{user.username or 'Not set'}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>Balance:</b> ${user.balance:.2f} USDT\n"
-        f"💎 <b>Total Deposited:</b> ${user.total_deposited or 0:.2f}\n"
-        f"🎁 <b>Total Bonus:</b> ${total_bonus:.2f}\n"
+        f"<tg-emoji emoji-id='5409048419211682843'>💰</tg-emoji> <b>Balance:</b> ${user.balance:.2f} USDT\n"
+        f"<tg-emoji emoji-id='5427168083074628963'>💎</tg-emoji> <b>Total Deposited:</b> ${user.total_deposited or 0:.2f}\n"
+        f"<tg-emoji emoji-id='5242311354919963946'>🎁</tg-emoji> <b>Total Bonus:</b> ${total_bonus:.2f}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📱 <b>Numbers Bought:</b> {len(purchases)}\n"
+        f"<tg-emoji emoji-id='5406683434124859552'>📱</tg-emoji> <b>Numbers Bought:</b> {len(purchases)}\n"
         f"👥 <b>Total Referrals:</b> {len(referrals)}\n"
         f"📅 <b>Joined:</b> {joined}\n"
         f"━━━━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📦 My Purchases", callback_data="my_purchases"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1127,8 +1127,8 @@ async def cb_help(query: CallbackQuery) -> None:
     await query.message.edit_text(
         get_help_text(),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📦 Check Stock", callback_data="check_stock"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Check Stock", callback_data="check_stock"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1159,7 +1159,7 @@ async def cb_check_stock(query: CallbackQuery) -> None:
             "😔 No numbers available right now.\n"
             "Check back soon — we restock regularly! 🔄",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back to Help", callback_data="help"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back to Help", callback_data="help"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -1186,8 +1186,8 @@ async def cb_check_stock(query: CallbackQuery) -> None:
     await query.message.edit_text(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🛍️ Buy Now", callback_data="buy"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back to Help", callback_data="help"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Buy Now", callback_data="buy"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Back to Help", callback_data="help"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1202,8 +1202,8 @@ async def cmd_deposit(message: Message) -> None:
         "💳 <b>Deposit Funds</b>\n\n"
         "Choose your preferred deposit method:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="💎 OxaPay Crypto", callback_data="oxapay_menu"), 'success', "5427168083074628963")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="OxaPay Crypto", callback_data="oxapay_menu"), 'success', "5427168083074628963")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1217,8 +1217,8 @@ async def cb_deposit(query: CallbackQuery) -> None:
         "💳 <b>Deposit Funds</b>\n\n"
         "Choose your preferred deposit method:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="💎 OxaPay Crypto", callback_data="oxapay_menu"), 'success', "5427168083074628963")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="OxaPay Crypto", callback_data="oxapay_menu"), 'success', "5427168083074628963")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1236,16 +1236,16 @@ async def cb_oxapay_menu(query: CallbackQuery) -> None:
         "💡 <i>Bonus amounts are added to your balance after payment!</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
-                apply_button_style(InlineKeyboardButton(text="💵 $1", callback_data="oxapay_1"), 'success', "5409048419211682843"),
-                apply_button_style(InlineKeyboardButton(text="💵 $5", callback_data="oxapay_5"), 'success', "5409048419211682843"),
-                apply_button_style(InlineKeyboardButton(text="💵 $10", callback_data="oxapay_10"), 'success', "5409048419211682843"),
+                apply_button_style(InlineKeyboardButton(text="$1", callback_data="oxapay_1"), 'success', "5409048419211682843"),
+                apply_button_style(InlineKeyboardButton(text="$5", callback_data="oxapay_5"), 'success', "5409048419211682843"),
+                apply_button_style(InlineKeyboardButton(text="$10", callback_data="oxapay_10"), 'success', "5409048419211682843"),
             ],
             [
-                apply_button_style(InlineKeyboardButton(text="💵 $20 (+5%)", callback_data="oxapay_20"), 'success', "5409048419211682843"),
-                apply_button_style(InlineKeyboardButton(text="💵 $50 (+10%)", callback_data="oxapay_50"), 'success', "5409048419211682843"),
+                apply_button_style(InlineKeyboardButton(text="$20 (+5%)", callback_data="oxapay_20"), 'success', "5409048419211682843"),
+                apply_button_style(InlineKeyboardButton(text="$50 (+10%)", callback_data="oxapay_50"), 'success', "5409048419211682843"),
             ],
-            [apply_button_style(InlineKeyboardButton(text="✏️ Custom Amount", callback_data="oxapay_custom"), 'primary', "5368341238871248978")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Custom Amount", callback_data="oxapay_custom"), 'primary', "5368341238871248978")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1272,7 +1272,7 @@ async def cb_oxapay_custom(query: CallbackQuery, state: FSMContext) -> None:
         "✏️ <b>Custom Deposit Amount</b>\n\n"
         "Enter the amount in USD (minimum $1):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="🔴 Cancel", callback_data="oxapay_cancel"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="oxapay_cancel"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -1296,8 +1296,8 @@ async def fsm_oxapay_custom_amount(message: Message, state: FSMContext) -> None:
             await message.answer(
                 "❌ Minimum deposit amount is $1.\n\nPlease try again:",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="💎 Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="deposit"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data="deposit"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -1306,8 +1306,8 @@ async def fsm_oxapay_custom_amount(message: Message, state: FSMContext) -> None:
             await message.answer(
                 "❌ Maximum deposit amount is $10,000.\n\nPlease try again:",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="💎 Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="deposit"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data="deposit"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -1316,8 +1316,8 @@ async def fsm_oxapay_custom_amount(message: Message, state: FSMContext) -> None:
         await message.answer(
             "❌ Invalid amount. Please enter a valid number like 25 or 50.5",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="💎 Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="deposit"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Try Again", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data="deposit"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -1366,8 +1366,8 @@ async def _create_oxapay_payment(query: CallbackQuery, amount: int) -> None:
                     await query.message.edit_text(
                         "❌ Payment system temporarily unavailable.\n\nPlease try again later.",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
-                            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                            apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
+                            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
                         ]]),
                         parse_mode=ParseMode.HTML,
                     )
@@ -1381,8 +1381,8 @@ async def _create_oxapay_payment(query: CallbackQuery, amount: int) -> None:
                     await query.message.edit_text(
                         f"❌ Payment creation failed.\n\nError: {data.get('message', 'Unknown error')}",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
-                            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                            apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
+                            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
                         ]]),
                         parse_mode=ParseMode.HTML,
                     )
@@ -1397,8 +1397,8 @@ async def _create_oxapay_payment(query: CallbackQuery, amount: int) -> None:
         await query.message.edit_text(
             "❌ Connection error. Please try again.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_menu"), 'primary', "5427168083074628963"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -1430,9 +1430,9 @@ async def _create_oxapay_payment(query: CallbackQuery, amount: int) -> None:
         f"Your balance will be updated automatically!\n\n"
         f"⏰ <i>Payment expires in 60 minutes</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="💳 Pay Now", url=pay_link), 'success', "5409048419211682843")],
-            [apply_button_style(InlineKeyboardButton(text="🔄 Check Status", callback_data=f"oxapay_check_{oxapay_track_id or track_id}"), 'primary', "5206607081334906820")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Pay Now", url=pay_link), 'success', "5409048419211682843")],
+            [apply_button_style(InlineKeyboardButton(text="Check Status", callback_data=f"oxapay_check_{oxapay_track_id or track_id}"), 'primary', "5206607081334906820")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1472,8 +1472,8 @@ async def _create_oxapay_payment_from_message(message: Message, amount: float, b
                     await message.answer(
                         "❌ Payment system temporarily unavailable.\n\nPlease try again later.",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                            apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
                         ]]),
                         parse_mode=ParseMode.HTML,
                     )
@@ -1485,8 +1485,8 @@ async def _create_oxapay_payment_from_message(message: Message, amount: float, b
                     await message.answer(
                         f"❌ Payment creation failed.\n\nError: {data.get('message', 'Unknown error')}",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                            apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
                         ]]),
                         parse_mode=ParseMode.HTML,
                     )
@@ -1500,8 +1500,8 @@ async def _create_oxapay_payment_from_message(message: Message, amount: float, b
         await message.answer(
             "❌ Connection error. Please try again.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="🔄 Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Retry", callback_data="oxapay_custom"), 'primary', "5427168083074628963"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -1532,9 +1532,9 @@ async def _create_oxapay_payment_from_message(message: Message, amount: float, b
         f"Your balance will be updated automatically!\n\n"
         f"⏰ <i>Payment expires in 60 minutes</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="💳 Pay Now", url=pay_link), 'success', "5409048419211682843")],
-            [apply_button_style(InlineKeyboardButton(text="🔄 Check Status", callback_data=f"oxapay_check_{oxapay_track_id or track_id}"), 'primary', "5206607081334906820")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Pay Now", url=pay_link), 'success', "5409048419211682843")],
+            [apply_button_style(InlineKeyboardButton(text="Check Status", callback_data=f"oxapay_check_{oxapay_track_id or track_id}"), 'primary', "5206607081334906820")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1588,7 +1588,7 @@ async def cb_oxapay_check(query: CallbackQuery) -> None:
                         f"📝 <b>Order ID:</b> <code>{track_id}</code>\n\n"
                         f"Your balance has been updated!",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            apply_button_style(InlineKeyboardButton(text="◀️ Back to Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
+                            apply_button_style(InlineKeyboardButton(text="Back to Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
                         ]]),
                         parse_mode=ParseMode.HTML,
                     )
@@ -1736,9 +1736,9 @@ async def cmd_buy(message: Message) -> None:
         "🛍️ <b>Buy Accounts</b>\n\n"
         "Select a category to browse:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1752,9 +1752,9 @@ async def cb_buy(query: CallbackQuery) -> None:
         "🛍️ <b>Buy Accounts</b>\n\n"
         "Select a category to browse:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1768,9 +1768,9 @@ async def cb_buy_cat_telegram(query: CallbackQuery) -> None:
         "📱 <b>Telegram Accounts</b>\n\n"
         "Choose account type:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Old Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="buy"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -1833,7 +1833,7 @@ async def _show_category_countries(
     if not countries_data:
         text = f"😔 No {category_name} available right now.\n\nCheck back later!"
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="buy"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756"),
         ]])
         if edit:
             await message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -1862,20 +1862,20 @@ async def _show_category_countries(
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="⬅️ Prev", callback_data=f"cat_countries_{category}_{page - 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Prev", callback_data=f"cat_countries_{category}_{page - 1}"), 'primary', "5416041192905265756")
         )
     if page < total_pages - 1:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="Next ➡️", callback_data=f"cat_countries_{category}_{page + 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Next", callback_data=f"cat_countries_{category}_{page + 1}"), 'primary', "5416117059207572332")
         )
     if nav_row:
         buttons.append(nav_row)
     
     # Back button based on category
     if category in [CATEGORY_TELEGRAM_ACCOUNTS, CATEGORY_TELEGRAM_OLD]:
-        buttons.append([apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
+        buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
     else:
-        buttons.append([apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="buy"), 'danger', "5416041192905265756")])
+        buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     text = (
@@ -1921,7 +1921,7 @@ async def cb_cat_country(query: CallbackQuery) -> None:
             f"{get_country_flag(country)} {country.title()} right now.\n\n"
             f"Please check back later or choose another country.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -1954,8 +1954,8 @@ async def cb_cat_country(query: CallbackQuery) -> None:
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click <b>Buy Now</b> to purchase a random number from this pool.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🛒 Buy Now", callback_data=f"buy_confirm_{category}|{country}"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Cancel", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Buy Now", callback_data=f"buy_confirm_{category}|{country}"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2000,7 +2000,7 @@ async def cb_buy_confirm(query: CallbackQuery) -> None:
             "❌ <b>No Numbers Available</b>\n\nThis country's stock is now empty. "
             "Please choose another country.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -2016,11 +2016,11 @@ async def cb_buy_confirm(query: CallbackQuery) -> None:
     if can_afford:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(
-                text="✅ Confirm Purchase",
+                text="Confirm Purchase",
                 callback_data=f"buy_execute_{category}|{country}",
             ), 'primary', "5206607081334906820")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"cat_country_{category}|{country}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2031,9 +2031,9 @@ async def cb_buy_confirm(query: CallbackQuery) -> None:
         )
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📥 Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
+            [apply_button_style(InlineKeyboardButton(text="Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"cat_country_{category}|{country}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2096,7 +2096,7 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
                 "❌ <b>No numbers available.</b>\n\nThis stock just ran out. "
                 "Please try another country.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_cat_{category}"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2113,8 +2113,8 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
                 f"💵 Required: <b>${product.price:.2f}</b>\n\n"
                 f"Please deposit funds first.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
-                    [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"cat_country_{category}|{country}"), 'danger', "5416041192905265756")],
+                    [apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
+                    [apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"cat_country_{category}|{country}"), 'danger', "5416041192905265756")],
                 ]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2134,8 +2134,8 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
                 f"💵 Required: <b>${actual_price:.2f}</b>\n\n"
                 f"Please deposit funds first.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
-                    [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"cat_country_{category}|{country}"), 'danger', "5416041192905265756")],
+                    [apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
+                    [apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"cat_country_{category}|{country}"), 'danger', "5416041192905265756")],
                 ]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2215,8 +2215,8 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"⚡ OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🔄 Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
+            [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2242,7 +2242,7 @@ async def _show_old_account_years(message: Message, edit: bool = False) -> None:
     if not years:
         text = "😔 No Telegram Old Accounts available right now.\n\nCheck back later!"
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756"),
         ]])
         if edit:
             await message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -2264,7 +2264,7 @@ async def _show_old_account_years(message: Message, edit: bool = False) -> None:
             row = []
     if row:
         year_buttons.append(row)
-    year_buttons.append([apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
+    year_buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=year_buttons)
     text_msg = (
@@ -2311,7 +2311,7 @@ async def _show_old_account_countries(
     if not countries_data:
         text = f"😔 No Telegram Old Accounts available for {year}.\n\nCheck back later!"
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'danger', "5416041192905265756"),
         ]])
         if edit:
             await message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -2332,7 +2332,7 @@ async def _show_old_account_countries(
             row_ = []
     if row_:
         buttons.append(row_)
-    buttons.append([apply_button_style(InlineKeyboardButton(text="🔴 Back", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'danger', "5416041192905265756")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     text_msg = (
@@ -2380,7 +2380,7 @@ async def cb_tgold_country(query: CallbackQuery) -> None:
             f"{get_country_flag(country)} {country.title()} ({year}) right now.\n\n"
             f"Please check back later or choose another country.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -2397,8 +2397,8 @@ async def cb_tgold_country(query: CallbackQuery) -> None:
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click <b>Buy Now</b> to purchase a random number from this pool.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🛒 Buy Now", callback_data=f"tgold_confirm_{year}|{country}"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="🔴 Cancel", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Buy Now", callback_data=f"tgold_confirm_{year}|{country}"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2446,7 +2446,7 @@ async def cb_tgold_confirm(query: CallbackQuery) -> None:
             "❌ <b>No Numbers Available</b>\n\nThis country's stock is now empty. "
             "Please choose another country.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -2462,11 +2462,11 @@ async def cb_tgold_confirm(query: CallbackQuery) -> None:
     if can_afford:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(
-                text="✅ Confirm Purchase",
+                text="Confirm Purchase",
                 callback_data=f"tgold_exec_{year}|{country}",
             ), 'primary', "5206607081334906820")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"tgold_ctry_{year}|{country}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2477,9 +2477,9 @@ async def cb_tgold_confirm(query: CallbackQuery) -> None:
         )
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📥 Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
+            [apply_button_style(InlineKeyboardButton(text="Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"tgold_ctry_{year}|{country}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2544,7 +2544,7 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
                 "❌ <b>No numbers available.</b>\n\nThis stock just ran out. "
                 "Please try another country.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"tgold_yr_{year}"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2559,8 +2559,8 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
                 f"💵 Required: <b>${product.price:.2f}</b>\n\n"
                 f"Please deposit funds first.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
-                    [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data=f"tgold_ctry_{year}|{country}"), 'danger', "5416041192905265756")],
+                    [apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
+                    [apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"tgold_ctry_{year}|{country}"), 'danger', "5416041192905265756")],
                 ]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2629,8 +2629,8 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"⚡ OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🔄 Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
+            [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2659,7 +2659,7 @@ async def _show_countries(
     if not countries:
         text = "😔 No accounts available right now. Check back later!"
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
         ]])
         if edit:
             await message.edit_text(text, reply_markup=kb)
@@ -2680,15 +2680,15 @@ async def _show_countries(
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="⬅️ Prev", callback_data=f"countries_page_{page - 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Prev", callback_data=f"countries_page_{page - 1}"), 'primary', "5416041192905265756")
         )
     if page < total_pages - 1:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="Next ➡️", callback_data=f"countries_page_{page + 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Next", callback_data=f"countries_page_{page + 1}"), 'primary', "5416117059207572332")
         )
     if nav_row:
         buttons.append(nav_row)
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     text = f"🌍 Select a country (Page {page + 1}/{total_pages}):"
@@ -2716,12 +2716,12 @@ async def cb_country(query: CallbackQuery) -> None:
 
     buttons = [
         [apply_button_style(InlineKeyboardButton(
-            text=f"📱 {p.phone_number}  –  ${p.price:.2f}",
+            text=f"{p.phone_number}  –  ${p.price:.2f}",
             callback_data=f"product_{p.id}",
         ), 'primary', "5197252827247841976")]
         for p in products
     ]
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="buy"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")])
     await query.message.edit_text(
         f"📋 Available numbers in <b>{get_country_flag(country)} {country}</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -2746,8 +2746,8 @@ async def cb_product(query: CallbackQuery) -> None:
         f"💵 Price: <b>${p.price:.2f} USDT</b>\n\n"
         f"Tap <b>Buy Now</b> to proceed to confirmation.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🛒 Buy Now", callback_data=f"buynow_{product_id}"), 'primary', "5406683434124859552")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back",    callback_data=f"country_{p.country}"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Buy Now", callback_data=f"buynow_{product_id}"), 'primary', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Back",    callback_data=f"country_{p.country}"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2767,7 +2767,7 @@ async def cb_buynow(query: CallbackQuery) -> None:
             await query.message.edit_text(
                 "❌ This number is no longer available.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="buy"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2788,11 +2788,11 @@ async def cb_buynow(query: CallbackQuery) -> None:
     if can_afford:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(
-                text="✅ Confirm Purchase",
+                text="Confirm Purchase",
                 callback_data=f"buynowexec_{product_id}",
             ), 'primary', "5206607081334906820")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"product_{product_id}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2803,9 +2803,9 @@ async def cb_buynow(query: CallbackQuery) -> None:
         )
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📥 Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
+            [apply_button_style(InlineKeyboardButton(text="Deposit Funds", callback_data="deposit"), 'primary', "5424976816530014958")],
             [apply_button_style(InlineKeyboardButton(
-                text="🔴 Cancel",
+                text="Cancel",
                 callback_data=f"product_{product_id}",
             ), 'danger', "5416041192905265756")],
         ])
@@ -2842,7 +2842,7 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
             await query.message.edit_text(
                 "❌ This number is no longer available.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="buy"), 'danger', "5416041192905265756"),
+                    apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756"),
                 ]]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2862,8 +2862,8 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
                 f"Required: <b>${p.price:.2f}</b>\n\n"
                 f"Please deposit funds first.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
-                    [apply_button_style(InlineKeyboardButton(text="◀️ Back",    callback_data=f"product_{product_id}"), 'danger', "5416041192905265756")],
+                    [apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
+                    [apply_button_style(InlineKeyboardButton(text="Back",    callback_data=f"product_{product_id}"), 'danger', "5416041192905265756")],
                 ]),
                 parse_mode=ParseMode.HTML,
             )
@@ -2940,8 +2940,8 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
         f"⚡ OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="🔄 Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
+            [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -2969,7 +2969,7 @@ async def cb_getotp(query: CallbackQuery) -> None:
             query.message,
             "❌ <b>Product not found.</b>\n\nPlease contact support.",
             InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
         )
         return
@@ -2981,7 +2981,7 @@ async def cb_getotp(query: CallbackQuery) -> None:
             "No session string is configured for this number. "
             "Please contact support.",
             InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
         )
         return
@@ -2997,7 +2997,7 @@ async def cb_getotp(query: CallbackQuery) -> None:
             f"📱 Enter this code in Telegram to complete login.\n"
             f"⚠️ Do <b>not</b> share this code with anyone.",
             InlineKeyboardMarkup(inline_keyboard=[
-                [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
             ]),
         )
     else:
@@ -3011,9 +3011,9 @@ async def cb_getotp(query: CallbackQuery) -> None:
             f"🕐 <i>Last checked: {checked_at}</i>",
             InlineKeyboardMarkup(inline_keyboard=[
                 [apply_button_style(InlineKeyboardButton(
-                    text="🔄 Refresh", callback_data=f"getotp_{product_id}"
+                    text="Refresh", callback_data=f"getotp_{product_id}"
                 ), 'primary', "5449569374065152798")],
-                [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
             ]),
         )
 
@@ -3084,7 +3084,7 @@ async def cb_referral(query: CallbackQuery) -> None:
         f"Earn <b>{REFERRAL_COMMISSION_PCT}%</b> commission on every deposit "
         f"made by your referrals!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3114,20 +3114,20 @@ def admin_only(func):
 
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [apply_button_style(InlineKeyboardButton(text="➕ Add Number",        callback_data="admin_add_number"), 'primary', "5397916757333654639")],
-        [apply_button_style(InlineKeyboardButton(text="📦 View Inventory",    callback_data="admin_inventory_0"), 'primary', "5406683434124859552")],
-        [apply_button_style(InlineKeyboardButton(text="📋 Pending Orders",    callback_data="admin_orders"), 'primary', "5406683434124859552")],
+        [apply_button_style(InlineKeyboardButton(text="Add Number",        callback_data="admin_add_number"), 'primary', "5397916757333654639")],
+        [apply_button_style(InlineKeyboardButton(text="View Inventory",    callback_data="admin_inventory_0"), 'primary', "5406683434124859552")],
+        [apply_button_style(InlineKeyboardButton(text="Pending Orders",    callback_data="admin_orders"), 'primary', "5406683434124859552")],
         [
-            apply_button_style(InlineKeyboardButton(text="👥 Users",          callback_data="admin_users_0"), 'primary', "5260343246831237239"),
-            apply_button_style(InlineKeyboardButton(text="🔍 Search User",    callback_data="admin_search_user"), 'primary', "5368341238871248978"),
+            apply_button_style(InlineKeyboardButton(text="Users",          callback_data="admin_users_0"), 'primary', "5260343246831237239"),
+            apply_button_style(InlineKeyboardButton(text="Search User",    callback_data="admin_search_user"), 'primary', "5368341238871248978"),
         ],
         [
-            apply_button_style(InlineKeyboardButton(text="📊 Stats",          callback_data="admin_stats"), 'primary', "5260343246831237239"),
-            apply_button_style(InlineKeyboardButton(text="🏷️ Discounts",      callback_data="admin_discount"), 'primary', "5427168083074628963"),
+            apply_button_style(InlineKeyboardButton(text="Stats",          callback_data="admin_stats"), 'primary', "5260343246831237239"),
+            apply_button_style(InlineKeyboardButton(text="Discounts",      callback_data="admin_discount"), 'primary', "5427168083074628963"),
         ],
-        [apply_button_style(InlineKeyboardButton(text="🎁 Create Gift Code",  callback_data="admin_create_gift_code"), 'primary', "5461151367559141950")],
-        [apply_button_style(InlineKeyboardButton(text="📢 Broadcast",         callback_data="admin_broadcast"), 'primary', "5368341238871248978")],
-        [apply_button_style(InlineKeyboardButton(text="◀️ Main Menu",         callback_data="back_main"), 'danger', "5416041192905265756")],
+        [apply_button_style(InlineKeyboardButton(text="Create Gift Code",  callback_data="admin_create_gift_code"), 'primary', "5461151367559141950")],
+        [apply_button_style(InlineKeyboardButton(text="Broadcast",         callback_data="admin_broadcast"), 'primary', "5368341238871248978")],
+        [apply_button_style(InlineKeyboardButton(text="Main Menu",         callback_data="back_main"), 'danger', "5416041192905265756")],
     ])
 
 
@@ -3232,25 +3232,25 @@ async def cb_admin_stats(query: CallbackQuery) -> None:
         tiers_text = "  No discount tiers set"
 
     await query.message.edit_text(
-        f"📊 <b>Bot Statistics</b>\n\n"
+        f"<tg-emoji emoji-id='5260343246831237239'>📊</tg-emoji> <b>Bot Statistics</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👥 <b>Users</b>\n"
         f"  Total: <b>{total_users}</b>\n"
         f"  Active: <b>{active_users}</b>\n"
         f"  Banned: <b>{banned_users}</b>\n\n"
-        f"💰 <b>Financials</b>\n"
+        f"<tg-emoji emoji-id='5409048419211682843'>💰</tg-emoji> <b>Financials</b>\n"
         f"  Total Deposited: <b>${float(total_deposited):.2f} USDT</b>\n"
         f"  Total Sell Volume: <b>${float(sell_volume):.2f} USDT</b>\n\n"
-        f"📱 <b>Numbers</b>\n"
+        f"<tg-emoji emoji-id='5406683434124859552'>📱</tg-emoji> <b>Numbers</b>\n"
         f"  Available: <b>{available_numbers}</b>\n"
         f"  Sold: <b>{sold_numbers}</b>\n"
         f"  Total Orders: <b>{total_orders}</b>\n\n"
-        f"🏷️ <b>Discount Tiers</b>\n"
+        f"<tg-emoji emoji-id='5427168083074628963'>🏷️</tg-emoji> <b>Discount Tiers</b>\n"
         f"{tiers_text}\n\n"
-        f"🎁 <b>Active Gift Codes:</b> {active_gifts}\n\n"
+        f"<tg-emoji emoji-id='5242311354919963946'>🎁</tg-emoji> <b>Active Gift Codes:</b> {active_gifts}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_menu"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3283,8 +3283,8 @@ async def cb_admin_discount(query: CallbackQuery, state: FSMContext) -> None:
         f"Tiers are cumulative — users get the highest tier they qualify for.\n\n"
         f"💡 <i>Example: Set 10% for $20+ and 20% for $50+</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="➕ Add Discount Tier", callback_data="admin_add_discount_tier"), 'primary', "5397916757333654639")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Add Discount Tier", callback_data="admin_add_discount_tier"), 'primary', "5397916757333654639")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_menu"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3300,7 +3300,7 @@ async def cb_admin_add_discount_tier(query: CallbackQuery, state: FSMContext) ->
         "Step 1/2: Enter the <b>discount percentage</b>\n"
         "Example: <code>10</code> for 10% discount",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3317,7 +3317,7 @@ async def fsm_discount_pct(message: Message, state: FSMContext) -> None:
         await message.answer(
             "❌ Invalid percentage. Enter a whole number between 1 and 99 (e.g. 10):",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -3330,7 +3330,7 @@ async def fsm_discount_pct(message: Message, state: FSMContext) -> None:
         f"Users who have deposited this amount or more will get the discount.\n"
         f"Example: <code>20</code> for users who deposited $20+",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3347,7 +3347,7 @@ async def fsm_discount_min_deposit(message: Message, state: FSMContext) -> None:
         await message.answer(
             "❌ Invalid amount. Enter a non-negative number (e.g. 20):",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_discount"), 'danger', "5416041192905265756"),
             ]]),
             parse_mode=ParseMode.HTML,
         )
@@ -3381,10 +3381,10 @@ async def cb_admin_add_number(query: CallbackQuery, state: FSMContext) -> None:
         "➕ <b>Add New Number</b>\n\n"
         "Step 1/5: Select the <b>category</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="📱 Telegram Old Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="🔐 Telegram Sessions", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3415,7 +3415,7 @@ async def cb_admin_add_category(query: CallbackQuery, state: FSMContext) -> None
                 row = []
         if row:
             year_buttons.append(row)
-        year_buttons.append([apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756")])
+        year_buttons.append([apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756")])
         await query.message.edit_text(
             f"➕ <b>Add New Number</b>\n\n"
             f"📁 Category: <b>{category_name}</b>\n\n"
@@ -3432,7 +3432,7 @@ async def cb_admin_add_category(query: CallbackQuery, state: FSMContext) -> None
         f"📁 Category: <b>{category_name}</b>\n\n"
         f"Step 2/5: Enter the <b>country name</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3458,7 +3458,7 @@ async def cb_admin_add_year(query: CallbackQuery, state: FSMContext) -> None:
         f"📅 Year: <b>{year}</b>\n\n"
         f"Step 3/6: Enter the <b>country name</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3472,7 +3472,7 @@ async def fsm_add_country(message: Message, state: FSMContext) -> None:
     await message.answer(
         "Step 3/5: Enter the <b>phone number</b> (e.g. +91 9876543210):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3486,7 +3486,7 @@ async def fsm_add_phone(message: Message, state: FSMContext) -> None:
     await message.answer(
         "Step 4/5: Enter the <b>price in USDT</b> (e.g. 5.00):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3508,7 +3508,7 @@ async def fsm_add_price(message: Message, state: FSMContext) -> None:
         "Step 5/5: Paste the <b>Pyrogram Session String</b> for this number\n"
         "(generate it with <code>generate_session.py</code>):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3603,15 +3603,15 @@ async def cb_admin_inventory(query: CallbackQuery) -> None:
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="⬅️ Prev", callback_data=f"admin_inventory_{page - 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Prev", callback_data=f"admin_inventory_{page - 1}"), 'primary', "5416041192905265756")
         )
     if page < total_pages - 1:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="Next ➡️", callback_data=f"admin_inventory_{page + 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Next", callback_data=f"admin_inventory_{page + 1}"), 'primary', "5416117059207572332")
         )
     if nav_row:
         buttons.append(nav_row)
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
 
     await query.message.edit_text(
         f"📦 <b>Inventory</b> (Page {page + 1}/{total_pages}):",
@@ -3639,10 +3639,10 @@ async def cb_admin_inv_item(query: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
                 apply_button_style(InlineKeyboardButton(
-                    text="🗑 Remove/Mark Sold", callback_data=f"admin_remove_{p.id}"
-                ), 'danger'),
+                    text="Remove/Mark Sold", callback_data=f"admin_remove_{p.id}"
+                ), 'danger', "5276032951342088188"),
             ],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_inventory_0"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_inventory_0"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3690,7 +3690,7 @@ async def cb_admin_orders(query: CallbackQuery) -> None:
         ), 'primary', "5406683434124859552")]
         for o in orders
     ]
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
     await query.message.edit_text(
         "📋 <b>Pending Orders:</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -3725,13 +3725,13 @@ async def cb_admin_order_detail(query: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
                 apply_button_style(InlineKeyboardButton(
-                    text="✅ Fulfill", callback_data=f"admin_fulfill_{order_id}"
-                ), 'success'),
+                    text="Fulfill", callback_data=f"admin_fulfill_{order_id}"
+                ), 'success', "5206607081334906820"),
                 apply_button_style(InlineKeyboardButton(
-                    text="❌ Refund", callback_data=f"admin_refund_{order_id}"
-                ), 'danger'),
+                    text="Refund", callback_data=f"admin_refund_{order_id}"
+                ), 'danger', "5416041192905265756"),
             ],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_orders"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_orders"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -4164,38 +4164,38 @@ async def _show_admin_user_detail(message: Message, user_id: int) -> None:
         purchases = ord_rows.scalars().all()
 
     ban_btn = (
-        apply_button_style(InlineKeyboardButton(text="✅ Unban", callback_data=f"admin_unban_{user_id}"), 'success', "5206607081334906820")
+        apply_button_style(InlineKeyboardButton(text="Unban", callback_data=f"admin_unban_{user_id}"), 'success', "5206607081334906820")
         if u.is_banned
-        else apply_button_style(InlineKeyboardButton(text="🚫 Ban", callback_data=f"admin_ban_{user_id}"), 'danger')
+        else apply_button_style(InlineKeyboardButton(text="Ban", callback_data=f"admin_ban_{user_id}"), 'danger', "5276032951342088188")
     )
     joined = u.created_at.strftime("%Y-%m-%d") if u.created_at else "N/A"
     await message.edit_text(
-        f"👤 <b>User Details</b>\n\n"
+        f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>User Details</b>\n\n"
         f"ID: <code>{u.id}</code>\n"
         f"Username: @{u.username or 'N/A'}\n"
-        f"Balance: <b>${u.balance:.2f} USDT</b>\n"
+        f"<tg-emoji emoji-id='5409048419211682843'>💰</tg-emoji> Balance: <b>${u.balance:.2f} USDT</b>\n"
         f"Total Deposited: <b>${total_deposited:.2f} USDT</b>\n"
         f"Purchases: <b>{len(purchases)}</b>\n"
         f"Referred by: {u.referred_by or 'None'}\n"
         f"Joined: {joined}\n"
-        f"Status: {'🚫 Banned' if u.is_banned else '✅ Active'}",
+        f"Status: {'<tg-emoji emoji-id=\"5276032951342088188\">🚫</tg-emoji> Banned' if u.is_banned else '<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> Active'}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [ban_btn],
             [
                 apply_button_style(InlineKeyboardButton(
-                    text="💰 Deposits",
+                    text="Deposits",
                     callback_data=f"admin_user_deposits_{user_id}",
                 ), 'primary', "5409048419211682843"),
                 apply_button_style(InlineKeyboardButton(
-                    text="📦 Purchases",
+                    text="Purchases",
                     callback_data=f"admin_user_purchases_{user_id}",
                 ), 'primary', "5406683434124859552"),
             ],
             [apply_button_style(InlineKeyboardButton(
-                text="🏷️ Adjust Discount",
+                text="Adjust Discount",
                 callback_data=f"admin_set_user_discount_{user_id}",
             ), 'primary', "5427168083074628963")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back to Users", callback_data="admin_users_0"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Back to Users", callback_data="admin_users_0"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -4231,15 +4231,15 @@ async def cb_admin_users(query: CallbackQuery) -> None:
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="⬅️ Prev", callback_data=f"admin_users_{page - 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Prev", callback_data=f"admin_users_{page - 1}"), 'primary', "5416041192905265756")
         )
     if page < total_pages - 1:
         nav_row.append(
-            apply_button_style(InlineKeyboardButton(text="Next ➡️", callback_data=f"admin_users_{page + 1}"), 'primary', "5416041192905265756")
+            apply_button_style(InlineKeyboardButton(text="Next", callback_data=f"admin_users_{page + 1}"), 'primary', "5416117059207572332")
         )
     if nav_row:
         buttons.append(nav_row)
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="admin_menu"), 'danger', "5416041192905265756")])
 
     await query.message.edit_text(
         f"👥 <b>Users</b> (Page {page + 1}/{total_pages}, Total: {len(users)}):",
@@ -4379,7 +4379,7 @@ async def cb_admin_search_user(query: CallbackQuery, state: FSMContext) -> None:
     await query.message.edit_text(
         "🔍 <b>Search User</b>\n\nEnter a <b>Telegram ID</b> or <b>@username</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_search"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_search"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -4435,38 +4435,38 @@ async def fsm_search_user(message: Message, state: FSMContext) -> None:
         purchases = ord_rows.scalars().all()
 
     ban_btn = (
-        apply_button_style(InlineKeyboardButton(text="✅ Unban", callback_data=f"admin_unban_{u.id}"), 'success', "5206607081334906820")
+        apply_button_style(InlineKeyboardButton(text="Unban", callback_data=f"admin_unban_{u.id}"), 'success', "5206607081334906820")
         if u.is_banned
-        else apply_button_style(InlineKeyboardButton(text="🚫 Ban", callback_data=f"admin_ban_{u.id}"), 'danger')
+        else apply_button_style(InlineKeyboardButton(text="Ban", callback_data=f"admin_ban_{u.id}"), 'danger', "5276032951342088188")
     )
     joined = u.created_at.strftime("%Y-%m-%d") if u.created_at else "N/A"
     await message.answer(
-        f"👤 <b>User Details</b>\n\n"
+        f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>User Details</b>\n\n"
         f"ID: <code>{u.id}</code>\n"
         f"Username: @{u.username or 'N/A'}\n"
-        f"Balance: <b>${u.balance:.2f} USDT</b>\n"
+        f"<tg-emoji emoji-id='5409048419211682843'>💰</tg-emoji> Balance: <b>${u.balance:.2f} USDT</b>\n"
         f"Total Deposited: <b>${total_deposited:.2f} USDT</b>\n"
         f"Purchases: <b>{len(purchases)}</b>\n"
         f"Referred by: {u.referred_by or 'None'}\n"
         f"Joined: {joined}\n"
-        f"Status: {'🚫 Banned' if u.is_banned else '✅ Active'}",
+        f"Status: {'<tg-emoji emoji-id=\"5276032951342088188\">🚫</tg-emoji> Banned' if u.is_banned else '<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> Active'}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [ban_btn],
             [
                 apply_button_style(InlineKeyboardButton(
-                    text="💰 Deposits",
+                    text="Deposits",
                     callback_data=f"admin_user_deposits_{u.id}",
                 ), 'primary', "5409048419211682843"),
                 apply_button_style(InlineKeyboardButton(
-                    text="📦 Purchases",
+                    text="Purchases",
                     callback_data=f"admin_user_purchases_{u.id}",
                 ), 'primary', "5406683434124859552"),
             ],
             [apply_button_style(InlineKeyboardButton(
-                text="🏷️ Adjust Discount",
+                text="Adjust Discount",
                 callback_data=f"admin_set_user_discount_{u.id}",
             ), 'primary', "5427168083074628963")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ Back to Admin", callback_data="admin_menu"), 'danger', "5416041192905265756")],
+            [apply_button_style(InlineKeyboardButton(text="Back to Admin", callback_data="admin_menu"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -4487,7 +4487,7 @@ async def cb_admin_set_user_discount(query: CallbackQuery, state: FSMContext) ->
         f"Enter <code>0</code> to remove personal discount.\n"
         f"Example: <code>15</code> for 15% discount",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data=f"admin_user_detail_{user_id}"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data=f"admin_user_detail_{user_id}"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -4597,7 +4597,7 @@ async def cb_admin_create_gift_code(query: CallbackQuery, state: FSMContext) -> 
         "Step 1/3: Enter the <b>amount in USDT</b> to give\n"
         "Example: <code>5.00</code>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            apply_button_style(InlineKeyboardButton(text="❌ Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756"),
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756"),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -4816,7 +4816,7 @@ async def cb_my_purchases(query: CallbackQuery) -> None:
         await query.message.edit_text(
             "📦 You haven't purchased any numbers yet.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756"),
+                apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
         )
         return
@@ -4830,7 +4830,7 @@ async def cb_my_purchases(query: CallbackQuery) -> None:
             text=f"{otp_icon} {phone}",
             callback_data=f"purchase_detail_{o.id}",
         ), 'primary', "5406683434124859552")])
-    buttons.append([apply_button_style(InlineKeyboardButton(text="◀️ Back", callback_data="back_main"), 'danger', "5416041192905265756")])
+    buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")])
 
     await query.message.edit_text(
         "📦 <b>My Purchases</b>\n\n✅ = OTP received  ⏳ = Waiting for OTP",
@@ -4863,7 +4863,7 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         await query.message.edit_text(
             "❌ Product details not found.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                apply_button_style(InlineKeyboardButton(text="◀️ My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552"),
+                apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552"),
             ]]),
         )
         return
@@ -4872,13 +4872,13 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
     if p.latest_otp:
         otp_line = f"✅ <b>OTP Received:</b> <code>{p.latest_otp}</code>"
         kb_rows = [
-            [apply_button_style(InlineKeyboardButton(text="◀️ My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
         ]
     else:
         otp_line = "⏳ OTP not received yet."
         kb_rows = [
-            [apply_button_style(InlineKeyboardButton(text="🔄 Get OTP", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="◀️ My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
+            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
+            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
         ]
 
     # Session string display – only for Telegram Sessions category
