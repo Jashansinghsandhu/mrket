@@ -528,17 +528,31 @@ async def get_or_create_user(
 
 
 def build_main_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Build the main menu with styled inline buttons."""
+    """Build the main menu with styled inline buttons and custom emojis."""
     buttons = [
-        [apply_button_style(InlineKeyboardButton(text="🛍️ Buy Accounts", callback_data="buy"), 'primary', "5312361253610475399")],
-        [apply_button_style(InlineKeyboardButton(text="📥 Deposit", callback_data="deposit"), 'primary', "5424976816530014958")],
-        [apply_button_style(InlineKeyboardButton(text="👤 Profile", callback_data="profile"), 'primary', "5258011929993026890")],
-        [apply_button_style(InlineKeyboardButton(text="🤝 Referral", callback_data="referral"), 'primary', "5461151367559141950")],
-        [apply_button_style(InlineKeyboardButton(text="❓ Help", callback_data="help"), 'primary', "5334544901428229844")],
-        [apply_button_style(InlineKeyboardButton(text="🆘 Support", url=f"https://t.me/{SUPPORT_USERNAME}"), 'danger', "5197252827247841976")],
+        # Row 1 (Full width)
+        [apply_button_style(InlineKeyboardButton(text="Buy Accounts", callback_data="buy"), 'primary', "5312361253610475399")],
+
+        # Row 2 (Two columns)
+        [
+            apply_button_style(InlineKeyboardButton(text="Deposit", callback_data="deposit"), 'primary', "5424976816530014958"),
+            apply_button_style(InlineKeyboardButton(text="Profile", callback_data="profile"), 'primary', "5258011929993026890")
+        ],
+
+        # Row 3 (Two columns)
+        [
+            apply_button_style(InlineKeyboardButton(text="Referral", callback_data="referral"), 'primary', "5461151367559141950"),
+            apply_button_style(InlineKeyboardButton(text="Help", callback_data="help"), 'primary', "5334544901428229844")
+        ],
+
+        # Row 4 (Full width)
+        [apply_button_style(InlineKeyboardButton(text="Support", url=f"https://t.me/{SUPPORT_USERNAME}"), 'danger', "5197252827247841976")]
     ]
+
+    # Row 5 (Admin only)
     if is_admin:
-        buttons.append([apply_button_style(InlineKeyboardButton(text="🔐 Admin Panel", callback_data="admin_menu"), 'primary', "5260343246831237239")])
+        buttons.append([apply_button_style(InlineKeyboardButton(text="Admin Panel", callback_data="admin_menu"), 'primary', "5260343246831237239")])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
