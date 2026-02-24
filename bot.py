@@ -42,6 +42,9 @@ DATA PERSISTENCE:
 
 BOT_TOKEN = "8320586826:AAGsP6LgRM0nKXw_eb9NU7cP0TMo7LSTBqc"
 
+# Secondary admin bot for ingesting .session / .zip files
+ADMIN_BOT_TOKEN = ""  # Set this to your second bot token for the ingestion bot
+
 ADMIN_IDS: list[int] = [6083286836]
 
 TELEGRAM_API_ID: int   = 31706595
@@ -168,6 +171,7 @@ import secrets
 import signal
 import traceback
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -178,7 +182,7 @@ import qrcode
 from cryptography.fernet import Fernet
 from eth_account import Account
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, Integer, Numeric,
+    BigInteger, Boolean, Column, DateTime, Integer, LargeBinary, Numeric,
     String, Text, delete, select, text, update,
 )
 from sqlalchemy.exc import OperationalError as SAOperationalError
@@ -256,17 +260,18 @@ class User(Base):
 
 class Product(Base):
     __tablename__ = "products"
-    id             = Column(Integer, primary_key=True, autoincrement=True)
-    category       = Column(String(32), nullable=False, default="telegram_accounts")
-    country        = Column(String(64), nullable=False)
-    phone_number   = Column(String(32), nullable=False, unique=True)
-    price          = Column(Numeric(18, 6), nullable=False)
-    session_string = Column(Text, nullable=True)
-    status         = Column(String(16), default="Available")
-    latest_otp     = Column(String(16), nullable=True)
-    otp_updated_at = Column(DateTime, nullable=True)
-    year           = Column(Integer, nullable=True)  # For telegram_old_accounts
-    twofa_password = Column(Text, nullable=True)
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    category          = Column(String(32), nullable=False, default="telegram_accounts")
+    country           = Column(String(64), nullable=False)
+    phone_number      = Column(String(32), nullable=False, unique=True)
+    price             = Column(Numeric(18, 6), nullable=False)
+    session_string    = Column(Text, nullable=True)
+    session_file_data = Column(LargeBinary, nullable=True)
+    status            = Column(String(16), default="Available")
+    latest_otp        = Column(String(16), nullable=True)
+    otp_updated_at    = Column(DateTime, nullable=True)
+    year              = Column(Integer, nullable=True)  # For telegram_old_accounts
+    twofa_password    = Column(Text, nullable=True)
 
 
 class Transaction(Base):
@@ -374,6 +379,14 @@ class PremiumOrder(Base):
     created_at     = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class Settings(Base):
+    """Global bot settings (key/value store)."""
+    __tablename__ = "settings"
+    key        = Column(String(64), primary_key=True)
+    value      = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -394,6 +407,8 @@ async def init_db() -> None:
             "ALTER TABLE products ADD COLUMN twofa_password TEXT",
             "CREATE TABLE IF NOT EXISTS premium_countries (id INTEGER PRIMARY KEY AUTOINCREMENT, country VARCHAR(64) NOT NULL UNIQUE, price NUMERIC(18,6) NOT NULL, created_at DATETIME)",
             "CREATE TABLE IF NOT EXISTS premium_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_ref VARCHAR(32) UNIQUE NOT NULL, user_id BIGINT NOT NULL, country VARCHAR(64) NOT NULL, price NUMERIC(18,6) NOT NULL, status VARCHAR(16) DEFAULT 'Pending', phone_number VARCHAR(32), session_string TEXT, twofa_password TEXT, product_id INTEGER, created_at DATETIME)",
+            "ALTER TABLE products ADD COLUMN session_file_data BLOB",
+            "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(64) PRIMARY KEY, value TEXT, updated_at DATETIME)",
         ]
         for migration in migrations:
             try:
@@ -477,6 +492,111 @@ def format_session_full(session_string: Optional[str]) -> str:
         return "🔐 <b>Session String:</b> Not configured"
     return f"🔐 <b>Session String:</b>\n<code>{session_string}</code>"
 
+
+# Phone-prefix → country name mapping for auto-detection during file ingestion
+_PHONE_PREFIX_MAP: list[tuple[str, str]] = [
+    # Sorted longest-prefix first to ensure specific matches win
+    ("9955", "georgia"), ("9956", "kyrgyzstan"), ("9957", "tajikistan"),
+    ("9958", "turkmenistan"), ("9959", "ukraine"), ("9960", "saudi arabia"),
+    ("9961", "yemen"), ("9962", "pakistan"), ("9963", "georgia"),
+    ("9964", "azerbaijan"), ("9965", "uzbekistan"), ("9966", "saudi arabia"),
+    ("9967", "uzbekistan"), ("9968", "uzbekistan"), ("9971", "uae"),
+    ("9972", "israel"), ("9973", "bahrain"), ("9974", "qatar"),
+    ("9975", "turkmenistan"), ("9976", "kyrgyzstan"), ("9977", "nepal"),
+    ("9978", "azerbaijan"), ("9979", "oman"), ("9992", "tajikistan"),
+    ("9993", "turkmenistan"), ("9994", "azerbaijan"), ("9995", "georgia"),
+    ("9996", "kyrgyzstan"), ("9998", "uzbekistan"),
+    ("995", "georgia"), ("994", "azerbaijan"), ("993", "turkmenistan"),
+    ("992", "tajikistan"), ("991", "tajikistan"), ("977", "nepal"),
+    ("976", "mongolia"), ("975", "bhutan"), ("974", "qatar"),
+    ("973", "bahrain"), ("972", "israel"), ("971", "uae"),
+    ("970", "palestine"), ("968", "oman"), ("967", "yemen"),
+    ("966", "saudi arabia"), ("965", "kuwait"), ("964", "iraq"),
+    ("963", "syria"), ("962", "jordan"), ("961", "lebanon"),
+    ("960", "maldives"), ("998", "uzbekistan"), ("996", "kyrgyzstan"),
+    ("380", "ukraine"), ("375", "belarus"), ("374", "armenia"),
+    ("373", "moldova"), ("370", "lithuania"), ("371", "latvia"),
+    ("372", "estonia"), ("358", "finland"), ("357", "cyprus"),
+    ("356", "malta"), ("355", "albania"), ("354", "iceland"),
+    ("353", "ireland"), ("352", "luxembourg"), ("351", "portugal"),
+    ("350", "gibraltar"), ("389", "north macedonia"), ("387", "bosnia"),
+    ("386", "slovenia"), ("385", "croatia"), ("382", "montenegro"),
+    ("381", "serbia"), ("48", "poland"), ("47", "norway"),
+    ("46", "sweden"), ("45", "denmark"), ("44", "united kingdom"),
+    ("43", "austria"), ("420", "czech republic"), ("421", "slovakia"),
+    ("36", "hungary"), ("34", "spain"), ("33", "france"),
+    ("32", "belgium"), ("31", "netherlands"), ("30", "greece"),
+    ("27", "south africa"), ("20", "egypt"),
+    ("255", "tanzania"), ("254", "kenya"), ("253", "djibouti"),
+    ("252", "somalia"), ("251", "ethiopia"), ("250", "rwanda"),
+    ("249", "sudan"), ("234", "nigeria"), ("233", "ghana"),
+    ("225", "ivory coast"), ("222", "mauritania"), ("221", "senegal"),
+    ("216", "tunisia"), ("213", "algeria"), ("212", "morocco"),
+    ("1", "united states"),
+    ("7", "russia"),
+    ("81", "japan"), ("82", "south korea"), ("84", "vietnam"),
+    ("86", "china"), ("852", "hong kong"), ("853", "macao"),
+    ("855", "cambodia"), ("856", "laos"), ("880", "bangladesh"),
+    ("886", "taiwan"),
+    ("90", "turkey"), ("91", "india"), ("92", "pakistan"),
+    ("93", "afghanistan"), ("94", "sri lanka"), ("95", "myanmar"),
+    ("98", "iran"),
+    ("60", "malaysia"), ("61", "australia"), ("62", "indonesia"),
+    ("63", "philippines"), ("64", "new zealand"), ("65", "singapore"),
+    ("66", "thailand"),
+]
+# Ensure longest prefixes are matched first
+_PHONE_PREFIX_MAP.sort(key=lambda x: len(x[0]), reverse=True)
+
+
+def detect_country_from_phone(phone_str: str) -> str:
+    """Detect country name from a phone number string by matching known prefixes.
+
+    Returns the country name (lowercase) or "unknown" if not matched.
+    """
+    # Strip all non-digit characters (e.g. spaces, dashes, leading '+')
+    digits = re.sub(r"\D", "", phone_str)
+    for prefix, country in _PHONE_PREFIX_MAP:
+        if digits.startswith(prefix):
+            return country
+    return "unknown"
+
+
+async def get_default_session_price() -> Decimal:
+    """Fetch the global default session price from the Settings table."""
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            select(Settings).where(Settings.key == "default_session_price")
+        )
+        row = result.scalar_one_or_none()
+        if row and row.value:
+            try:
+                return Decimal(row.value)
+            except Exception:
+                pass
+    return Decimal("2.00")
+
+
+async def set_default_session_price(price: Decimal) -> None:
+    """Persist the global default session price to the Settings table."""
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            select(Settings).where(Settings.key == "default_session_price")
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            await session.execute(
+                update(Settings)
+                .where(Settings.key == "default_session_price")
+                .values(value=str(price), updated_at=datetime.now(timezone.utc))
+            )
+        else:
+            session.add(Settings(
+                key="default_session_price",
+                value=str(price),
+                updated_at=datetime.now(timezone.utc),
+            ))
+        await session.commit()
 
 
 def get_country_flag(country: str) -> str:
@@ -1023,6 +1143,7 @@ class AdminAddNumber(StatesGroup):
     phone          = State()
     price          = State()
     session_string = State()
+    session_file   = State()  # Used instead of session_string for CATEGORY_TELEGRAM_SESSIONS
     twofa_password = State()
 
 
@@ -2424,6 +2545,7 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         phone = product.phone_number
         price = actual_price
         sess_str = product.session_string
+        sess_file_data = product.session_file_data
         twofa_enc = product.twofa_password
         pid = product.id
 
@@ -2456,34 +2578,62 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
         except Exception:
             pass
 
-    # Session string is only shown for Telegram Sessions category
-    if category == CATEGORY_TELEGRAM_SESSIONS:
-        session_line = format_session_preview(sess_str) + "\n"
-    else:
-        session_line = ""
-
     disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
-    await query.message.edit_text(
-        f"<tg-emoji emoji-id=\"5235711785482341993\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
-        f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
-        f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
-        f"{disc_line}"
-        f"{session_line}"
-        f"{twofa_line}"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
-        f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
-        f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
-        f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
-        f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"<tg-emoji emoji-id=\"5456140674028019486\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
-        ]),
-        parse_mode=ParseMode.HTML,
-    )
+
+    if category == CATEGORY_TELEGRAM_SESSIONS:
+        # Deliver .session file directly; no session string preview in text
+        session_line = "<tg-emoji emoji-id=\"5197252827247841976\">📄</tg-emoji> Your .session file is attached above.\n"
+        success_text = (
+            f"<tg-emoji emoji-id=\"5235711785482341993\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+            f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
+            f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
+            f"{disc_line}"
+            f"{twofa_line}"
+            f"{session_line}"
+        )
+        if sess_file_data:
+            await query.message.answer_document(
+                document=BufferedInputFile(sess_file_data, filename=f"{phone}.session"),
+                caption=success_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                ]),
+            )
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        else:
+            await query.message.edit_text(
+                success_text,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+    else:
+        await query.message.edit_text(
+            f"<tg-emoji emoji-id=\"5235711785482341993\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+            f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5224450179368767019\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
+            f"<tg-emoji emoji-id=\"5197434882321567830\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
+            f"{disc_line}"
+            f"{twofa_line}"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
+            f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
+            f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
+            f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
+            f"<tg-emoji emoji-id=\"5456140674028019486\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
+                [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+            ]),
+            parse_mode=ParseMode.HTML,
+        )
 
 
 # ── Telegram Old Accounts – Year-based Buy Flow ───────────────────────────────
@@ -3585,6 +3735,7 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         price = actual_price
         country = p.country
         sess_str = p.session_string
+        sess_file_data = p.session_file_data
         twofa_enc = p.twofa_password
         pid = p.id
         p_category = p.category
@@ -3618,34 +3769,61 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
         except Exception:
             pass
 
-    # Session string is only shown for Telegram Sessions category
-    if p_category == CATEGORY_TELEGRAM_SESSIONS:
-        session_line = format_session_preview(sess_str) + "\n"
-    else:
-        session_line = ""
-
     disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
-    await query.message.edit_text(
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
-        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country}\n"
-        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
-        f"{disc_line}"
-        f"{session_line}"
-        f"{twofa_line}"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b><tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> Next Steps:</b>\n"
-        f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
-        f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
-        f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
-        f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
-        ]),
-        parse_mode=ParseMode.HTML,
-    )
+
+    if p_category == CATEGORY_TELEGRAM_SESSIONS:
+        session_line = "<tg-emoji emoji-id=\"5197252827247841976\">📄</tg-emoji> Your .session file is attached above.\n"
+        success_text = (
+            f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+            f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country}\n"
+            f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
+            f"{disc_line}"
+            f"{twofa_line}"
+            f"{session_line}"
+        )
+        if sess_file_data:
+            await query.message.answer_document(
+                document=BufferedInputFile(sess_file_data, filename=f"{phone}.session"),
+                caption=success_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                ]),
+            )
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        else:
+            await query.message.edit_text(
+                success_text,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+    else:
+        await query.message.edit_text(
+            f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+            f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country}\n"
+            f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
+            f"{disc_line}"
+            f"{twofa_line}"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b><tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> Next Steps:</b>\n"
+            f"<tg-emoji emoji-id=\"5382322671679708881\">1️⃣</tg-emoji> Open <b>Telegram / Telegram X / TurboTel</b>\n"
+            f"<tg-emoji emoji-id=\"5381990043642502553\">2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
+            f"<tg-emoji emoji-id=\"5381879959335738545\">3️⃣</tg-emoji> Tap <b>Send Code</b> in Telegram\n"
+            f"<tg-emoji emoji-id=\"5382054253403577563\">4️⃣</tg-emoji> Come back here and press <b>🔄 Get OTP</b>\n\n"
+            f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
+                [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
+            ]),
+            parse_mode=ParseMode.HTML,
+        )
 
 
 # ── Get OTP (redesigned) ─────────────────────────────────────────────────────
@@ -4203,10 +4381,57 @@ async def fsm_add_price(message: Message, state: FSMContext) -> None:
         await message.answer("❌ Invalid price. Please enter a positive number like 5.00")
         return
     await state.update_data(price=str(price))
-    await state.set_state(AdminAddNumber.session_string)
+    data = await state.get_data()
+    category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
+    if category == CATEGORY_TELEGRAM_SESSIONS:
+        await state.set_state(AdminAddNumber.session_file)
+        await message.answer(
+            "Step 5/5: Upload the <b>.session file</b> for this number as a document attachment.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await state.set_state(AdminAddNumber.session_string)
+        await message.answer(
+            "Step 5/5: Paste the <b>Pyrogram Session String</b> for this number\n"
+            "(generate it with <code>generate_session.py</code>):",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+
+
+@router.message(AdminAddNumber.session_file)
+@admin_only
+async def fsm_add_session_file(message: Message, state: FSMContext) -> None:
+    """Handle .session file upload for Telegram Sessions category."""
+    if not message.document:
+        await message.answer(
+            "❌ Please upload the <b>.session file</b> as a document attachment.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if not message.document.file_name or not message.document.file_name.lower().endswith(".session"):
+        await message.answer(
+            "❌ Invalid file type. Please upload a <b>.session</b> file.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    try:
+        buf = io.BytesIO()
+        await message.bot.download(message.document, destination=buf)
+        file_bytes = buf.getvalue()
+    except Exception as e:
+        log.error("Error downloading session file: %s", e)
+        await message.answer("❌ Failed to download the file. Please try again.")
+        return
+    await state.update_data(session_file_data=file_bytes)
+    await state.set_state(AdminAddNumber.twofa_password)
     await message.answer(
-        "Step 5/5: Paste the <b>Pyrogram Session String</b> for this number\n"
-        "(generate it with <code>generate_session.py</code>):",
+        "Does this account have a 2FA password? Enter it now, or send <code>0</code> to skip.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
         ]]),
@@ -4217,6 +4442,9 @@ async def fsm_add_price(message: Message, state: FSMContext) -> None:
 @router.message(AdminAddNumber.session_string)
 @admin_only
 async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Please paste the session string as text.", parse_mode=ParseMode.HTML)
+        return
     await state.update_data(session_string=message.text.strip())
     await state.set_state(AdminAddNumber.twofa_password)
     await message.answer(
@@ -4231,23 +4459,43 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
 @router.message(AdminAddNumber.twofa_password)
 @admin_only
 async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Please enter the 2FA password as text, or send <code>0</code> to skip.", parse_mode=ParseMode.HTML)
+        return
     raw = message.text.strip()
     twofa_enc: Optional[str] = None
     if raw != "0":
         twofa_enc = encrypt_privkey(raw)
 
     data = await state.get_data()
-    session_str = data.get("session_string", "")
-    if not session_str:
-        await message.answer(
-            "❌ Session string is missing. This can happen if the FSM state expired.\n"
-            "Please restart the add number flow from the Admin Panel.",
-            reply_markup=build_admin_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-        await state.clear()
-        return
     category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
+
+    # For CATEGORY_TELEGRAM_SESSIONS we store raw file bytes instead of session string
+    if category == CATEGORY_TELEGRAM_SESSIONS:
+        session_file_data: Optional[bytes] = data.get("session_file_data")
+        if not session_file_data:
+            await message.answer(
+                "❌ Session file is missing. This can happen if the FSM state expired.\n"
+                "Please restart the add number flow from the Admin Panel.",
+                reply_markup=build_admin_keyboard(),
+                parse_mode=ParseMode.HTML,
+            )
+            await state.clear()
+            return
+        session_str = None
+    else:
+        session_str = data.get("session_string", "")
+        session_file_data = None
+        if not session_str:
+            await message.answer(
+                "❌ Session string is missing. This can happen if the FSM state expired.\n"
+                "Please restart the add number flow from the Admin Panel.",
+                reply_markup=build_admin_keyboard(),
+                parse_mode=ParseMode.HTML,
+            )
+            await state.clear()
+            return
+
     category_name = PRODUCT_CATEGORIES.get(category)
     if category_name is None:
         async with AsyncSessionFactory() as session:
@@ -4262,6 +4510,7 @@ async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
             phone_number=data["phone"],
             price=Decimal(data["price"]),
             session_string=session_str,
+            session_file_data=session_file_data,
             twofa_password=twofa_enc,
             status="Available",
             year=data.get("year"),
@@ -4272,6 +4521,7 @@ async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
     year = data.get("year")
     year_line = f"📅 Year: <b>{year}</b>\n" if year else ""
     twofa_line = "🔐 2FA: ✅ Set\n" if twofa_enc else ""
+    sess_icon = "📄 .session File: ✅ Uploaded\n" if category == CATEGORY_TELEGRAM_SESSIONS else "🔐 Session: ✅ Configured\n"
     await state.clear()
     await message.answer(
         f"✅ <b>Number Added Successfully!</b>\n\n"
@@ -4280,7 +4530,7 @@ async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
         f"📱 Number: <b>{data['phone']}</b>\n"
         f"🌍 Country: <b>{get_country_flag(data['country'])} {data['country'].title()}</b>\n"
         f"💰 Price: <b>${data['price']} USDT</b>\n"
-        f"🔐 Session: ✅ Configured\n"
+        f"{sess_icon}"
         f"{twofa_line}",
         reply_markup=build_admin_keyboard(),
         parse_mode=ParseMode.HTML,
@@ -5818,11 +6068,19 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
             [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
         ]
 
-    # Session string display – only for Telegram Sessions category
+    # For Telegram Sessions: show "Request .session File" button if file data exists
     if p.category == CATEGORY_TELEGRAM_SESSIONS:
-        sess_line = "\n" + format_session_full(p.session_string)
+        sess_line = ""
+        if p.session_file_data:
+            kb_rows.insert(0, [apply_button_style(
+                InlineKeyboardButton(text="Download .session File", callback_data=f"req_sess_file_{p.id}"),
+                'primary', "5197252827247841976",
+            )])
+        elif p.session_string:
+            sess_line = "\n" + format_session_full(p.session_string)
     else:
         sess_line = ""
+
     # 2FA password
     twofa_detail_line = ""
     if p.twofa_password:
@@ -5841,6 +6099,42 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         f"{sess_line}"
         f"{twofa_detail_line}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data.startswith("req_sess_file_"))
+async def cb_req_session_file(query: CallbackQuery) -> None:
+    """Send the stored .session file to the user on demand."""
+    await query.answer()
+    try:
+        product_id = int(query.data.split("_")[-1])
+    except (IndexError, ValueError):
+        await query.answer("❌ Invalid request.", show_alert=True)
+        return
+
+    user_id = query.from_user.id
+
+    # Verify the user actually purchased this product
+    async with AsyncSessionFactory() as session:
+        order_result = await session.execute(
+            select(Order).where(Order.product_id == product_id, Order.user_id == user_id, Order.status == "Completed")
+        )
+        order = order_result.scalar_one_or_none()
+        if order is None:
+            await query.answer("❌ Purchase not found.", show_alert=True)
+            return
+
+        prod_result = await session.execute(select(Product).where(Product.id == product_id))
+        p = prod_result.scalar_one_or_none()
+
+    if p is None or not p.session_file_data:
+        await query.answer("❌ Session file not available.", show_alert=True)
+        return
+
+    await query.message.answer_document(
+        document=BufferedInputFile(p.session_file_data, filename=f"{p.phone_number}.session"),
+        caption=f"<tg-emoji emoji-id=\"5197252827247841976\">📄</tg-emoji> <b>.session file for <code>{p.phone_number}</code></b>",
         parse_mode=ParseMode.HTML,
     )
 
@@ -6093,6 +6387,172 @@ async def _check_pending_oxapay_payments(bot: Bot) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  SECONDARY ADMIN BOT (file ingestion bot)
+# ─────────────────────────────────────────────────────────────────────────────
+
+admin_router = Router()
+
+
+async def _ingest_session_bytes(
+    file_bytes: bytes,
+    filename: str,
+    default_price: Decimal,
+) -> tuple[int, list[str]]:
+    """Insert a single .session file into the database.
+
+    Returns (added_count, [summary_line, ...]).
+    """
+    phone = re.sub(r"\D", "", os.path.splitext(filename)[0])
+    if not phone:
+        return 0, []
+
+    country = detect_country_from_phone(phone)
+    async with AsyncSessionFactory() as session:
+        # Check if a product with this phone already exists
+        existing = await session.execute(
+            select(Product).where(Product.phone_number == phone)
+        )
+        if existing.scalar_one_or_none():
+            return 0, [f"⚠️ {phone} — already in DB, skipped"]
+
+        product = Product(
+            category=CATEGORY_TELEGRAM_SESSIONS,
+            country=country,
+            phone_number=phone,
+            price=default_price,
+            session_file_data=file_bytes,
+            status="Available",
+        )
+        session.add(product)
+        try:
+            await session.commit()
+        except Exception as exc:
+            log.error("DB error ingesting %s: %s", phone, exc)
+            return 0, [f"❌ {phone} — DB error: {exc}"]
+
+    flag = get_country_flag(country)
+    return 1, [f"✅ {phone} — {flag} {country.title()}"]
+
+
+@admin_router.message(F.document)
+async def admin_ingest_file(message: Message) -> None:
+    """Handle .zip or .session file uploads from admins in the ingestion bot."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    doc = message.document
+    if not doc.file_name:
+        await message.answer("❌ File has no name.")
+        return
+
+    fname_lower = doc.file_name.lower()
+    if not (fname_lower.endswith(".zip") or fname_lower.endswith(".session")):
+        await message.answer("❌ Please upload a <b>.session</b> or <b>.zip</b> file.", parse_mode=ParseMode.HTML)
+        return
+
+    await message.answer("⏳ Processing file…")
+
+    # Download into memory
+    try:
+        buf = io.BytesIO()
+        await message.bot.download(doc, destination=buf)
+        raw_bytes = buf.getvalue()
+    except Exception as exc:
+        log.error("Error downloading file from admin bot: %s", exc)
+        await message.answer(f"❌ Failed to download file: {exc}")
+        return
+
+    default_price = await get_default_session_price()
+    total_added = 0
+    summary_lines: list[str] = []
+
+    if fname_lower.endswith(".session"):
+        added, lines = await _ingest_session_bytes(raw_bytes, doc.file_name, default_price)
+        total_added += added
+        summary_lines.extend(lines)
+
+    elif fname_lower.endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                for zip_entry in zf.infolist():
+                    entry_name = zip_entry.filename
+                    # Grab just the basename, stripping any folder path
+                    base = os.path.basename(entry_name)
+                    if not base.lower().endswith(".session"):
+                        continue
+                    try:
+                        file_data = zf.read(entry_name)
+                    except Exception as exc:
+                        summary_lines.append(f"❌ {base} — read error: {exc}")
+                        continue
+                    added, lines = await _ingest_session_bytes(file_data, base, default_price)
+                    total_added += added
+                    summary_lines.extend(lines)
+        except zipfile.BadZipFile:
+            await message.answer("❌ Invalid ZIP file.")
+            return
+        except Exception as exc:
+            log.error("Error processing ZIP: %s", exc)
+            await message.answer(f"❌ Error processing ZIP: {exc}")
+            return
+
+    if not summary_lines:
+        await message.answer("⚠️ No valid <b>.session</b> files found.", parse_mode=ParseMode.HTML)
+        return
+
+    lines_text = "\n".join(summary_lines[:50])  # Truncate if too many
+    extra = f"\n…and {len(summary_lines) - 50} more" if len(summary_lines) > 50 else ""
+    await message.answer(
+        f"<b>Ingestion complete</b>\n\n"
+        f"✅ Added: <b>{total_added}</b> session(s)\n"
+        f"Default price: <b>${default_price:.2f} USDT</b>\n\n"
+        f"{lines_text}{extra}",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@admin_router.message(Command("setprice"))
+async def admin_set_price(message: Message) -> None:
+    """Set the global default session price. Usage: /setprice 3.50"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        current = await get_default_session_price()
+        await message.answer(
+            f"Current default session price: <b>${current:.2f} USDT</b>\n\n"
+            f"Usage: <code>/setprice 3.50</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    try:
+        price = Decimal(parts[1].strip())
+        if price <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("❌ Invalid price. Use a positive number, e.g. <code>/setprice 3.50</code>", parse_mode=ParseMode.HTML)
+        return
+    await set_default_session_price(price)
+    await message.answer(f"✅ Default session price set to <b>${price:.2f} USDT</b>.", parse_mode=ParseMode.HTML)
+
+
+@admin_router.message(CommandStart())
+async def admin_bot_start(message: Message) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    current_price = await get_default_session_price()
+    await message.answer(
+        f"<b>Session Ingestion Bot</b>\n\n"
+        f"Upload a <b>.session</b> file or a <b>.zip</b> archive of session files and "
+        f"they will be automatically added to the marketplace database.\n\n"
+        f"Current default session price: <b>${current_price:.2f} USDT</b>\n\n"
+        f"Commands:\n"
+        f"• <code>/setprice &lt;amount&gt;</code> — set default price for new sessions",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -6124,6 +6584,20 @@ async def main() -> None:
     await site.start()
     log.info("OxaPay webhook server listening on http://localhost:8080")
 
+    # Start secondary admin ingestion bot if token is configured
+    admin_polling_task: Optional[asyncio.Task] = None
+    if ADMIN_BOT_TOKEN:
+        bot2 = Bot(
+            token=ADMIN_BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        dp2 = Dispatcher(storage=MemoryStorage())
+        dp2.include_router(admin_router)
+        admin_polling_task = asyncio.create_task(dp2.start_polling(bot2, skip_updates=True))
+        log.info("Secondary admin ingestion bot started.")
+    else:
+        log.info("ADMIN_BOT_TOKEN not set — secondary ingestion bot disabled.")
+
     # Save blockchain state on graceful shutdown (SIGINT / SIGTERM)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -6136,6 +6610,8 @@ async def main() -> None:
     try:
         await dp.start_polling(bot, skip_updates=True)
     finally:
+        if admin_polling_task:
+            admin_polling_task.cancel()
         _save_blockchain_state()
         await runner.cleanup()
         await otp_manager.shutdown()
