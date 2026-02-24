@@ -173,6 +173,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 import aiohttp
+from aiohttp import web
 import qrcode
 from cryptography.fernet import Fernet
 from eth_account import Account
@@ -487,13 +488,13 @@ def get_welcome_text(first_name: str, balance: Decimal) -> str:
     """Generate store welcome text with user balance for the bot."""
     return (
         f'<tg-emoji emoji-id="5343984088493599366">✨</tg-emoji> <b>Welcome to @aged_robot</b>\n\n'
-        f'<tg-emoji emoji-id="5987708392339150189">💎</tg-emoji> Premium Telegram accounts, sessions &amp; numbers — ready to use.\n\n'
-        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> Instant delivery\n'
-        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> No waiting\n'
-        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> No hassle\n'
-        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> Made For ADDS\n\n'
-        f'<tg-emoji emoji-id="5458603043203327669">📢</tg-emoji> Updates : @Agednews\n'
-        f'<tg-emoji emoji-id="5253742260054409879">📲</tg-emoji> DM : @Agedowner\n\n'
+        f'<tg-emoji emoji-id="5987708392339150189">💎</tg-emoji> <b>Premium Telegram accounts, sessions &amp; numbers — ready to use.</b>\n\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> <b>Instant delivery</b>\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> <b>No waiting</b>\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> <b>No hassle</b>\n'
+        f'<tg-emoji emoji-id="5900086068748752426">⚡</tg-emoji> <b>Made For ADDS</b>\n\n'
+        f'<tg-emoji emoji-id="5458603043203327669">📢</tg-emoji> <b>Updates : @Agednews</b>\n'
+        f'<tg-emoji emoji-id="5253742260054409879">📲</tg-emoji> <b>DM : @Agedowner</b>\n\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'<tg-emoji emoji-id="5409048419211682843">💰</tg-emoji> <b>Your Balance:</b> ${balance:.2f} USDT'
     )
@@ -1406,7 +1407,7 @@ async def cb_oxapay_menu(query: CallbackQuery) -> None:
     )
 
 
-@router.callback_query(F.data.startswith("oxapay_") & ~F.data.in_(["oxapay_menu", "oxapay_custom"]))
+@router.callback_query(F.data.startswith("oxapay_") & ~F.data.in_(["oxapay_menu", "oxapay_custom"]) & ~F.data.startswith("oxapay_check_"))
 async def cb_oxapay_amount(query: CallbackQuery) -> None:
     """Process OxaPay payment for preset amounts."""
     try:
@@ -1826,7 +1827,47 @@ async def _process_oxapay_confirmation(payment: OxaPayPayment, data: dict) -> No
         await session.commit()
 
 
-# ── Buy flow ──────────────────────────────────────────────────────────────────
+async def oxapay_webhook_handler(request: web.Request) -> web.Response:
+    """Handle instant payment webhooks from OxaPay at POST /oxapay/callback."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.Response(status=400)
+
+    track_id = data.get("trackId")
+    status = data.get("status", "")
+
+    if status in ("Paid", "Confirmed") and track_id:
+        async with AsyncSessionFactory() as session:
+            result = await session.execute(
+                select(OxaPayPayment).where(OxaPayPayment.track_id == str(track_id))
+            )
+            payment = result.scalar_one_or_none()
+
+        if payment is not None:
+            if payment.status == "Confirmed":
+                return web.Response(status=200)
+            await _process_oxapay_confirmation(payment, data)
+            try:
+                _bot: Bot = request.app["bot"]
+                total_credit = Decimal(str(payment.amount)) + Decimal(str(payment.bonus_amount))
+                await _bot.send_message(
+                    payment.user_id,
+                    f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>Payment Confirmed!</b>\n\n"
+                    f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Amount:</b> ${payment.amount:.2f}\n"
+                    f"<tg-emoji emoji-id=\"5242311354919963946\">🎁</tg-emoji> <b>Bonus:</b> +${payment.bonus_amount:.2f}\n"
+                    f"<tg-emoji emoji-id=\"5409048419211682843\">💰</tg-emoji> <b>Total Credited:</b> ${total_credit:.2f}\n"
+                    f"📝 <b>Order ID:</b> <code>{track_id}</code>\n\n"
+                    f"Your balance has been updated!",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as exc:
+                log.error("oxapay_webhook_handler: failed to notify user %s: %s", payment.user_id, exc)
+
+    return web.Response(status=200)
+
+
+
 
 async def get_applicable_discount(session: AsyncSession, user_id: int, total_deposited: Decimal) -> Decimal:
     """
@@ -6073,6 +6114,16 @@ async def main() -> None:
     # Start OxaPay payment monitor as a background task
     asyncio.create_task(oxapay_payment_monitor(bot))
 
+    # Set up aiohttp web server for OxaPay instant webhooks
+    app = web.Application()
+    app["bot"] = bot
+    app.router.add_post("/oxapay/callback", oxapay_webhook_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "localhost", 8080)
+    await site.start()
+    log.info("OxaPay webhook server listening on http://localhost:8080")
+
     # Save blockchain state on graceful shutdown (SIGINT / SIGTERM)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -6086,6 +6137,7 @@ async def main() -> None:
         await dp.start_polling(bot, skip_updates=True)
     finally:
         _save_blockchain_state()
+        await runner.cleanup()
         await otp_manager.shutdown()
         log.info("Bot stopped.")
 
