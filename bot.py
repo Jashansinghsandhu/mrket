@@ -263,7 +263,7 @@ class Product(Base):
     id                = Column(Integer, primary_key=True, autoincrement=True)
     category          = Column(String(32), nullable=False, default="telegram_accounts")
     country           = Column(String(64), nullable=False)
-    phone_number      = Column(String(32), nullable=False, unique=True)
+    phone_number      = Column(String(32), nullable=False)
     price             = Column(Numeric(18, 6), nullable=False)
     session_string    = Column(Text, nullable=True)
     session_file_data = Column(LargeBinary, nullable=True)
@@ -415,6 +415,40 @@ async def init_db() -> None:
                 await conn.execute(text(migration))
             except SAOperationalError:
                 pass  # Column already exists
+
+    # Migration: remove unique constraint on products.phone_number so that two records
+    # (one session + one account) can coexist for the same phone number.
+    try:
+        async with engine.connect() as conn:
+            idx_result = await conn.execute(text(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='index' AND tbl_name='products' "
+                "AND name='ix_products_phone_number'"
+            ))
+            if idx_result.scalar():
+                await conn.execute(text(
+                    "CREATE TABLE products_new ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  category VARCHAR(32) NOT NULL DEFAULT 'telegram_accounts',"
+                    "  country VARCHAR(64) NOT NULL,"
+                    "  phone_number VARCHAR(32) NOT NULL,"
+                    "  price NUMERIC(18,6) NOT NULL,"
+                    "  session_string TEXT,"
+                    "  session_file_data BLOB,"
+                    "  status VARCHAR(16) DEFAULT 'Available',"
+                    "  latest_otp VARCHAR(16),"
+                    "  otp_updated_at DATETIME,"
+                    "  year INTEGER,"
+                    "  twofa_password TEXT"
+                    ")"
+                ))
+                await conn.execute(text("INSERT INTO products_new SELECT * FROM products"))
+                await conn.execute(text("DROP TABLE products"))
+                await conn.execute(text("ALTER TABLE products_new RENAME TO products"))
+                await conn.commit()
+                log.info("Migrated products table: removed unique constraint on phone_number")
+    except Exception as _mig_exc:
+        log.warning("products phone_number unique-constraint migration skipped: %s", _mig_exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1168,6 +1202,10 @@ class AdminUserDiscountState(StatesGroup):
     discount_pct = State()
     min_deposit  = State()
 
+
+class ZipIngest(StatesGroup):
+    """FSM for the secondary admin ingestion bot zip-upload flow."""
+    waiting_for_2fa = State()
 
 class AdminCreateGiftCode(StatesGroup):
     amount         = State()
@@ -6055,31 +6093,33 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         return
 
     dt = o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "N/A"
-    if p.latest_otp:
-        otp_line = f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>OTP Received:</b> <code>{p.latest_otp}</code>"
-        kb_rows = [
-            [apply_button_style(InlineKeyboardButton(text="Get OTP Again", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
-        ]
-    else:
-        otp_line = "<tg-emoji emoji-id=\"5458603043203327669\">⏳</tg-emoji> OTP not received yet."
-        kb_rows = [
-            [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
-            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
-        ]
 
-    # For Telegram Sessions: show "Request .session File" button if file data exists
     if p.category == CATEGORY_TELEGRAM_SESSIONS:
+        # Sessions: hide OTP functionality; only offer .session file download
+        otp_line = ""
         sess_line = ""
+        kb_rows = [
+            [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
+        ]
         if p.session_file_data:
             kb_rows.insert(0, [apply_button_style(
                 InlineKeyboardButton(text="Download .session File", callback_data=f"req_sess_file_{p.id}"),
                 'primary', "5197252827247841976",
             )])
-        elif p.session_string:
-            sess_line = "\n" + format_session_full(p.session_string)
     else:
         sess_line = ""
+        if p.latest_otp:
+            otp_line = f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>OTP Received:</b> <code>{p.latest_otp}</code>"
+            kb_rows = [
+                [apply_button_style(InlineKeyboardButton(text="Get OTP Again", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
+                [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
+            ]
+        else:
+            otp_line = "<tg-emoji emoji-id=\"5458603043203327669\">⏳</tg-emoji> OTP not received yet."
+            kb_rows = [
+                [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
+                [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
+            ]
 
     # 2FA password
     twofa_detail_line = ""
@@ -6393,50 +6433,128 @@ async def _check_pending_oxapay_payments(bot: Bot) -> None:
 admin_router = Router()
 
 
+async def check_2fa_with_pyrogram(session_string: str) -> bool:
+    """Return True if the Telegram account has 2FA enabled.
+
+    Uses a Pyrogram in-memory client with the given session string and queries
+    the raw GetPassword RPC.  Returns False on any error or when Pyrogram is
+    not installed.
+    """
+    if not PYROGRAM_AVAILABLE:
+        return False
+    try:
+        from pyrogram.raw.functions.account import GetPassword  # type: ignore
+        async with PyroClient(
+            name="2fa_check",
+            api_id=TELEGRAM_API_ID,
+            api_hash=TELEGRAM_API_HASH,
+            session_string=session_string,
+            in_memory=True,
+            no_updates=True,
+        ) as client:
+            pwd = await client.invoke(GetPassword())
+            return bool(pwd.has_password)
+    except Exception as exc:
+        log.warning("2FA check via Pyrogram failed: %s", exc)
+        return False
+
+
+async def _ingest_dual_records(
+    phone: str,
+    session_file_bytes: Optional[bytes],
+    session_string_content: Optional[str],
+    twofa_enc: Optional[str],
+    default_price: Decimal,
+    country: str,
+) -> tuple[int, list[str]]:
+    """Insert a Session record AND an Account record for *phone* into the DB.
+
+    Skips whichever (phone, category) pair already exists.
+    Returns (number_of_new_records_added, [summary_line, ...]).
+    """
+    added = 0
+    lines: list[str] = []
+    flag = get_country_flag(country)
+
+    async with AsyncSessionFactory() as db:
+        # ── Session record ──────────────────────────────────────────────────
+        if session_file_bytes:
+            existing_sess = await db.execute(
+                select(Product).where(
+                    Product.phone_number == phone,
+                    Product.category == CATEGORY_TELEGRAM_SESSIONS,
+                )
+            )
+            if existing_sess.scalar_one_or_none():
+                lines.append(f"⚠️ {phone} (session) — already in DB, skipped")
+            else:
+                db.add(Product(
+                    category=CATEGORY_TELEGRAM_SESSIONS,
+                    country=country,
+                    phone_number=phone,
+                    price=default_price,
+                    session_file_data=session_file_bytes,
+                    session_string=None,
+                    twofa_password=None,
+                    status="Available",
+                ))
+                added += 1
+                lines.append(f"✅ {phone} (session) — {flag} {country.title()}")
+
+        # ── Account record ──────────────────────────────────────────────────
+        if session_string_content:
+            existing_acc = await db.execute(
+                select(Product).where(
+                    Product.phone_number == phone,
+                    Product.category == CATEGORY_TELEGRAM_ACCOUNTS,
+                )
+            )
+            if existing_acc.scalar_one_or_none():
+                lines.append(f"⚠️ {phone} (account) — already in DB, skipped")
+            else:
+                db.add(Product(
+                    category=CATEGORY_TELEGRAM_ACCOUNTS,
+                    country=country,
+                    phone_number=phone,
+                    price=default_price,
+                    session_string=session_string_content,
+                    session_file_data=None,
+                    twofa_password=twofa_enc,
+                    status="Available",
+                ))
+                added += 1
+                lines.append(f"✅ {phone} (account) — {flag} {country.title()}")
+
+        try:
+            await db.commit()
+        except Exception as exc:
+            log.error("DB error ingesting %s: %s", phone, exc)
+            lines.append(f"❌ {phone} — DB error: {exc}")
+            added = 0
+
+    return added, lines
+
+
 async def _ingest_session_bytes(
     file_bytes: bytes,
     filename: str,
     default_price: Decimal,
 ) -> tuple[int, list[str]]:
-    """Insert a single .session file into the database.
+    """Insert a single .session file as a CATEGORY_TELEGRAM_SESSIONS product.
 
+    Legacy helper retained for single-file uploads (no .txt counterpart).
     Returns (added_count, [summary_line, ...]).
     """
     phone = re.sub(r"\D", "", os.path.splitext(filename)[0])
     if not phone:
         return 0, []
-
     country = detect_country_from_phone(phone)
-    async with AsyncSessionFactory() as session:
-        # Check if a product with this phone already exists
-        existing = await session.execute(
-            select(Product).where(Product.phone_number == phone)
-        )
-        if existing.scalar_one_or_none():
-            return 0, [f"⚠️ {phone} — already in DB, skipped"]
-
-        product = Product(
-            category=CATEGORY_TELEGRAM_SESSIONS,
-            country=country,
-            phone_number=phone,
-            price=default_price,
-            session_file_data=file_bytes,
-            status="Available",
-        )
-        session.add(product)
-        try:
-            await session.commit()
-        except Exception as exc:
-            log.error("DB error ingesting %s: %s", phone, exc)
-            return 0, [f"❌ {phone} — DB error: {exc}"]
-
-    flag = get_country_flag(country)
-    return 1, [f"✅ {phone} — {flag} {country.title()}"]
+    return await _ingest_dual_records(phone, file_bytes, None, None, default_price, country)
 
 
 @admin_router.message(F.document)
-async def admin_ingest_file(message: Message) -> None:
-    """Handle .zip or .session file uploads from admins in the ingestion bot."""
+async def admin_ingest_file(message: Message, state: FSMContext) -> None:
+    """Step 1: Receive .zip or .session file, store in FSM state, ask for 2FA password."""
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -6450,9 +6568,8 @@ async def admin_ingest_file(message: Message) -> None:
         await message.answer("❌ Please upload a <b>.session</b> or <b>.zip</b> file.", parse_mode=ParseMode.HTML)
         return
 
-    await message.answer("⏳ Processing file…")
+    await message.answer("⏳ Downloading file…")
 
-    # Download into memory
     try:
         buf = io.BytesIO()
         await message.bot.download(doc, destination=buf)
@@ -6462,32 +6579,102 @@ async def admin_ingest_file(message: Message) -> None:
         await message.answer(f"❌ Failed to download file: {exc}")
         return
 
+    await state.update_data(zip_bytes=raw_bytes, zip_filename=doc.file_name)
+    await state.set_state(ZipIngest.waiting_for_2fa)
+    await message.answer(
+        "Enter the 2FA password to use for this batch if Two-Step Verification is "
+        "enabled (Send <b>None</b> if there is no password):",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@admin_router.message(ZipIngest.waiting_for_2fa)
+async def admin_ingest_2fa_password(message: Message, state: FSMContext) -> None:
+    """Step 2: Receive 2FA password, process file, insert dual DB records."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    twofa_plain = message.text.strip() if message.text else ""
+    twofa_enc: Optional[str] = None
+    if twofa_plain.lower() != "none" and twofa_plain:
+        twofa_enc = encrypt_privkey(twofa_plain)
+
+    data = await state.get_data()
+    await state.clear()
+
+    raw_bytes: Optional[bytes] = data.get("zip_bytes")
+    filename: str = data.get("zip_filename", "upload.zip")
+    if not raw_bytes:
+        await message.answer("❌ No file data found. Please upload the file again.")
+        return
+
+    fname_lower = filename.lower()
     default_price = await get_default_session_price()
     total_added = 0
     summary_lines: list[str] = []
 
+    await message.answer("⏳ Processing file and checking 2FA…")
+
     if fname_lower.endswith(".session"):
-        added, lines = await _ingest_session_bytes(raw_bytes, doc.file_name, default_price)
+        phone = re.sub(r"\D", "", os.path.splitext(filename)[0])
+        if not phone:
+            await message.answer("⚠️ Could not extract a phone number from the filename.")
+            return
+        country = detect_country_from_phone(phone)
+        added, lines = await _ingest_dual_records(phone, raw_bytes, None, twofa_enc, default_price, country)
         total_added += added
         summary_lines.extend(lines)
 
     elif fname_lower.endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
-                for zip_entry in zf.infolist():
-                    entry_name = zip_entry.filename
-                    # Grab just the basename, stripping any folder path
-                    base = os.path.basename(entry_name)
-                    if not base.lower().endswith(".session"):
-                        continue
-                    try:
-                        file_data = zf.read(entry_name)
-                    except Exception as exc:
-                        summary_lines.append(f"❌ {base} — read error: {exc}")
-                        continue
-                    added, lines = await _ingest_session_bytes(file_data, base, default_price)
+                # Build maps: phone -> session bytes, phone -> session string content
+                session_map: dict[str, bytes] = {}
+                string_map: dict[str, str] = {}
+
+                for entry in zf.infolist():
+                    name = entry.filename
+                    base = os.path.basename(name)
+
+                    if base.lower().endswith(".session"):
+                        phone = re.sub(r"\D", "", os.path.splitext(base)[0])
+                        if phone:
+                            try:
+                                session_map[phone] = zf.read(name)
+                            except Exception as exc:
+                                summary_lines.append(f"❌ {base} — read error: {exc}")
+
+                    elif (
+                        base.lower().endswith(".txt")
+                        and "sesi_string" in name.replace("\\", "/").lower()
+                    ):
+                        phone = re.sub(r"\D", "", os.path.splitext(base)[0])
+                        if phone:
+                            try:
+                                string_map[phone] = zf.read(name).decode("utf-8", errors="ignore").strip()
+                            except Exception as exc:
+                                summary_lines.append(f"❌ {base} — read error: {exc}")
+
+                # Gather all phone numbers seen in either map
+                all_phones = set(session_map) | set(string_map)
+
+                for phone in sorted(all_phones):
+                    s_bytes = session_map.get(phone)
+                    s_str = string_map.get(phone)
+                    country = detect_country_from_phone(phone)
+
+                    # Check 2FA via session string if available and a password was supplied
+                    effective_twofa_enc = twofa_enc
+                    if s_str and twofa_enc:
+                        has_2fa = await check_2fa_with_pyrogram(s_str)
+                        effective_twofa_enc = twofa_enc if has_2fa else None
+
+                    added, lines = await _ingest_dual_records(
+                        phone, s_bytes, s_str, effective_twofa_enc, default_price, country
+                    )
                     total_added += added
                     summary_lines.extend(lines)
+
         except zipfile.BadZipFile:
             await message.answer("❌ Invalid ZIP file.")
             return
@@ -6497,14 +6684,14 @@ async def admin_ingest_file(message: Message) -> None:
             return
 
     if not summary_lines:
-        await message.answer("⚠️ No valid <b>.session</b> files found.", parse_mode=ParseMode.HTML)
+        await message.answer("⚠️ No valid <b>.session</b> or <b>.txt</b> files found.", parse_mode=ParseMode.HTML)
         return
 
-    lines_text = "\n".join(summary_lines[:50])  # Truncate if too many
+    lines_text = "\n".join(summary_lines[:50])
     extra = f"\n…and {len(summary_lines) - 50} more" if len(summary_lines) > 50 else ""
     await message.answer(
         f"<b>Ingestion complete</b>\n\n"
-        f"✅ Added: <b>{total_added}</b> session(s)\n"
+        f"✅ Added: <b>{total_added}</b> record(s)\n"
         f"Default price: <b>${default_price:.2f} USDT</b>\n\n"
         f"{lines_text}{extra}",
         parse_mode=ParseMode.HTML,
