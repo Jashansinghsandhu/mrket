@@ -336,6 +336,15 @@ class GiftCodeClaim(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class CustomCategory(Base):
+    __tablename__ = "custom_categories"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    slug       = Column(String(64), unique=True, nullable=False)
+    name       = Column(String(128), nullable=False)
+    sub_name   = Column(String(128), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -994,6 +1003,11 @@ class OxaPayCustomAmount(StatesGroup):
     amount = State()
 
 
+class AdminCustomCategoryState(StatesGroup):
+    name     = State()
+    sub_name = State()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1099,8 +1113,8 @@ async def cb_profile(query: CallbackQuery) -> None:
     await query.message.edit_text(
         f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>Your Profile</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 <b>User ID:</b> <code>{user.id}</code>\n"
-        f"📛 <b>Name:</b> {first_name}\n"
+        f"<tg-emoji emoji-id=\"5240228673738527951\">🆔</tg-emoji> <b>User ID:</b> <code>{user.id}</code>\n"
+        f"<tg-emoji emoji-id=\"5240228673738527951\">📛</tg-emoji> <b>Name:</b> {first_name}\n"
         f"<tg-emoji emoji-id='5319175438268913255'>👤</tg-emoji> <b>Username:</b> @{user.username or 'Not set'}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<tg-emoji emoji-id='5409048419211682843'>💰</tg-emoji> <b>Balance:</b> ${user.balance:.2f} USDT\n"
@@ -1108,8 +1122,8 @@ async def cb_profile(query: CallbackQuery) -> None:
         f"<tg-emoji emoji-id='5242311354919963946'>🎁</tg-emoji> <b>Total Bonus:</b> ${total_bonus:.2f}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<tg-emoji emoji-id='5406683434124859552'>📱</tg-emoji> <b>Numbers Bought:</b> {len(purchases)}\n"
-        f"👥 <b>Total Referrals:</b> {len(referrals)}\n"
-        f"📅 <b>Joined:</b> {joined}\n"
+        f"<tg-emoji emoji-id=\"5319175438268913255\">👥</tg-emoji> <b>Total Referrals:</b> {len(referrals)}\n"
+        f"<tg-emoji emoji-id=\"5274055917766202507\">📅</tg-emoji> <b>Joined:</b> {joined}\n"
         f"━━━━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'primary', "5406683434124859552")],
@@ -1155,7 +1169,7 @@ async def cb_check_stock(query: CallbackQuery) -> None:
 
     if not stock_data:
         await query.message.edit_text(
-            "📦 <b>Current Stock</b>\n\n"
+            "<tg-emoji emoji-id=\"5406683434124859552\">📦</tg-emoji> <b>Current Stock</b>\n\n"
             "😔 No numbers available right now.\n"
             "Check back soon — we restock regularly! 🔄",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -1165,7 +1179,7 @@ async def cb_check_stock(query: CallbackQuery) -> None:
         )
         return
 
-    lines = ["📦 <b>Available Stock</b>\n", "━━━━━━━━━━━━━━━━━━━━━\n"]
+    lines = ["<tg-emoji emoji-id=\"5406683434124859552\">📦</tg-emoji> <b>Available Stock</b>\n", "━━━━━━━━━━━━━━━━━━━━━\n"]
     current_cat = None
     total_qty = 0
     for category, country, qty, price in stock_data:
@@ -1174,14 +1188,14 @@ async def cb_check_stock(query: CallbackQuery) -> None:
         if category != current_cat:
             if current_cat is not None:
                 lines.append("")
-            lines.append(f"📁 <b>{cat_name}</b>")
+            lines.append(f"<tg-emoji emoji-id=\"5305265301917549162\">📁</tg-emoji> <b>{cat_name}</b>")
             current_cat = category
         flag = get_country_flag(country)
         lines.append(f"  {flag} {country.title()} — {qty} available @ <b>${price:.2f}</b>/each")
 
     lines.append(f"\n━━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"📊 <b>Total Available:</b> {total_qty} numbers")
-    lines.append(f"\n<i>💡 Prices shown are per number. Tap Buy Accounts to purchase!</i>")
+    lines.append(f"\n<i><tg-emoji emoji-id=\"5262844652964303985\">💡</tg-emoji> Prices shown are per number. Tap Buy Accounts to purchase!</i>")
 
     await query.message.edit_text(
         "\n".join(lines),
@@ -1231,9 +1245,9 @@ async def cb_oxapay_menu(query: CallbackQuery) -> None:
     """Show OxaPay amount selection menu."""
     await query.answer()
     await query.message.edit_text(
-        "💎 <b>OxaPay Crypto Deposit</b>\n\n"
+        "<tg-emoji emoji-id=\"5427168083074628963\">💎</tg-emoji> <b>OxaPay Crypto Deposit</b>\n\n"
         "Select the amount to deposit:\n\n"
-        "💡 <i>Bonus amounts are added to your balance after payment!</i>",
+        "<tg-emoji emoji-id=\"5262844652964303985\">💡</tg-emoji> <i>Bonus amounts are added to your balance after payment!</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
                 apply_button_style(InlineKeyboardButton(text="$1", callback_data="oxapay_1"), 'success', "5409048419211682843"),
@@ -1419,11 +1433,11 @@ async def _create_oxapay_payment(query: CallbackQuery, amount: int) -> None:
         await session.commit()
     
     # Show payment link to user
-    bonus_text = f"\n🎁 <b>Bonus:</b> +${bonus_amount:.2f} ({bonus_percent}%)" if bonus_percent > 0 else ""
+    bonus_text = f"\n<tg-emoji emoji-id=\"5242311354919963946\">🎁</tg-emoji> <b>Bonus:</b> +${bonus_amount:.2f} ({bonus_percent}%)" if bonus_percent > 0 else ""
     
     await query.message.edit_text(
-        f"💎 <b>OxaPay Payment</b>\n\n"
-        f"💵 <b>Amount:</b> ${amount:.2f}{bonus_text}\n"
+        f"<tg-emoji emoji-id=\"5427168083074628963\">💎</tg-emoji> <b>OxaPay Payment</b>\n\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Amount:</b> ${amount:.2f}{bonus_text}\n"
         f"📝 <b>Order ID:</b> <code>{oxapay_track_id or track_id}</code>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click the button below to complete your payment.\n"
@@ -1521,11 +1535,11 @@ async def _create_oxapay_payment_from_message(message: Message, amount: float, b
         await session.commit()
     
     # Show payment link to user
-    bonus_text = f"\n🎁 <b>Bonus:</b> +${bonus_amount:.2f} ({bonus_percent}%)" if bonus_percent > 0 else ""
+    bonus_text = f"\n<tg-emoji emoji-id=\"5242311354919963946\">🎁</tg-emoji> <b>Bonus:</b> +${bonus_amount:.2f} ({bonus_percent}%)" if bonus_percent > 0 else ""
     
     await message.answer(
-        f"💎 <b>OxaPay Payment</b>\n\n"
-        f"💵 <b>Amount:</b> ${amount:.2f}{bonus_text}\n"
+        f"<tg-emoji emoji-id=\"5427168083074628963\">💎</tg-emoji> <b>OxaPay Payment</b>\n\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Amount:</b> ${amount:.2f}{bonus_text}\n"
         f"📝 <b>Order ID:</b> <code>{oxapay_track_id or track_id}</code>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Click the button below to complete your payment.\n"
@@ -1582,9 +1596,9 @@ async def cb_oxapay_check(query: CallbackQuery) -> None:
                     
                     # Update message
                     await query.message.edit_text(
-                        f"✅ <b>Payment Confirmed!</b>\n\n"
-                        f"💵 <b>Amount:</b> ${payment.amount:.2f}\n"
-                        f"🎁 <b>Bonus:</b> +${payment.bonus_amount:.2f}\n"
+                        f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>Payment Confirmed!</b>\n\n"
+                        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Amount:</b> ${payment.amount:.2f}\n"
+                        f"<tg-emoji emoji-id=\"5242311354919963946\">🎁</tg-emoji> <b>Bonus:</b> +${payment.bonus_amount:.2f}\n"
                         f"📝 <b>Order ID:</b> <code>{track_id}</code>\n\n"
                         f"Your balance has been updated!",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -1732,14 +1746,23 @@ MAX_DISPLAY_ITEMS = 20
 @router.message(Command("buy"))
 async def cmd_buy(message: Message) -> None:
     """Show main buy menu with categories."""
+    async with AsyncSessionFactory() as session:
+        cc_rows = await session.execute(select(CustomCategory).order_by(CustomCategory.created_at))
+        custom_cats = cc_rows.scalars().all()
+
+    kb_rows = [
+        [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
+        [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+    ]
+    for cc in custom_cats:
+        cb = f"buy_custom_sub_{cc.slug}" if cc.sub_name else f"buy_cat_{cc.slug}"
+        kb_rows.append([apply_button_style(InlineKeyboardButton(text=cc.name, callback_data=cb), 'primary', "5197252827247841976")])
+    kb_rows.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")])
+
     await message.answer(
-        "🛍️ <b>Buy Accounts</b>\n\n"
+        "<tg-emoji emoji-id=\"5406683434124859552\">🛍️</tg-emoji> <b>Buy Accounts</b>\n\n"
         "Select a category to browse:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
-        ]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         parse_mode=ParseMode.HTML,
     )
 
@@ -1748,14 +1771,23 @@ async def cmd_buy(message: Message) -> None:
 async def cb_buy(query: CallbackQuery) -> None:
     """Show main buy menu with categories."""
     await query.answer()
+    async with AsyncSessionFactory() as session:
+        cc_rows = await session.execute(select(CustomCategory).order_by(CustomCategory.created_at))
+        custom_cats = cc_rows.scalars().all()
+
+    kb_rows = [
+        [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
+        [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+    ]
+    for cc in custom_cats:
+        cb = f"buy_custom_sub_{cc.slug}" if cc.sub_name else f"buy_cat_{cc.slug}"
+        kb_rows.append([apply_button_style(InlineKeyboardButton(text=cc.name, callback_data=cb), 'primary', "5197252827247841976")])
+    kb_rows.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")])
+
     await query.message.edit_text(
-        "🛍️ <b>Buy Accounts</b>\n\n"
+        "<tg-emoji emoji-id=\"5406683434124859552\">🛍️</tg-emoji> <b>Buy Accounts</b>\n\n"
         "Select a category to browse:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data="buy_cat_telegram"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")],
-        ]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         parse_mode=ParseMode.HTML,
     )
 
@@ -1765,11 +1797,33 @@ async def cb_buy_cat_telegram(query: CallbackQuery) -> None:
     """Show Telegram account subcategories."""
     await query.answer()
     await query.message.edit_text(
-        "📱 <b>Telegram Accounts</b>\n\n"
+        "<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Telegram Accounts</b>\n\n"
         "Choose account type:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
             [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"buy_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
+            [apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")],
+        ]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data.startswith("buy_custom_sub_"))
+async def cb_buy_custom_sub(query: CallbackQuery) -> None:
+    """Show sub-menu for a custom category that has a sub_name."""
+    await query.answer()
+    slug = query.data.replace("buy_custom_sub_", "")
+    async with AsyncSessionFactory() as session:
+        cc_res = await session.execute(select(CustomCategory).where(CustomCategory.slug == slug))
+        cc = cc_res.scalar_one_or_none()
+    if not cc:
+        await query.answer("Category not found.", show_alert=True)
+        return
+    await query.message.edit_text(
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>{cc.name}</b>\n\n"
+        "Choose a subcategory:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [apply_button_style(InlineKeyboardButton(text=cc.sub_name, callback_data=f"buy_cat_{slug}"), 'primary', "5197252827247841976")],
             [apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")],
         ]),
         parse_mode=ParseMode.HTML,
@@ -1817,7 +1871,17 @@ async def _show_category_countries(
     message: Message, category: str, page: int = 0, edit: bool = False
 ) -> None:
     """Show available countries for a specific category with availability counts."""
-    category_name = PRODUCT_CATEGORIES.get(category, "Unknown Category")
+    category_name = PRODUCT_CATEGORIES.get(category)
+    _custom_cat_sub = None
+    if category_name is None:
+        async with AsyncSessionFactory() as session:
+            cc_res = await session.execute(select(CustomCategory).where(CustomCategory.slug == category))
+            _cc = cc_res.scalar_one_or_none()
+            if _cc:
+                category_name = _cc.name
+                _custom_cat_sub = _cc.sub_name
+            else:
+                category_name = "Unknown Category"
     
     async with AsyncSessionFactory() as session:
         # Get distinct countries with available count for this category
@@ -1874,13 +1938,15 @@ async def _show_category_countries(
     # Back button based on category
     if category in [CATEGORY_TELEGRAM_ACCOUNTS, CATEGORY_TELEGRAM_OLD]:
         buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy_cat_telegram"), 'danger', "5416041192905265756")])
+    elif _custom_cat_sub:
+        buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data=f"buy_custom_sub_{category}"), 'danger', "5416041192905265756")])
     else:
         buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="buy"), 'danger', "5416041192905265756")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     text = (
         f"{category_name}\n\n"
-        f"🌍 <b>Select a Country</b> (Page {page + 1}/{total_pages}):\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Select a Country</b> (Page {page + 1}/{total_pages}):\n"
         f"<i>Number in brackets = Available count</i>"
     )
     if edit:
@@ -2199,21 +2265,21 @@ async def cb_buy_execute(query: CallbackQuery) -> None:
     else:
         session_line = ""
 
-    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
+    disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
-        f"🎉 <b>Purchase Successful!</b>\n\n"
-        f"📱 <b>Number:</b> <code>{phone}</code>\n"
-        f"🌍 <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
-        f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"{session_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📋 <b>Next Steps:</b>\n"
+        f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
         f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
         f"2️⃣ Enter the number: <code>{phone}</code>\n"
         f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"⚡ OTP is fetched <b>instantly</b> from the account!",
+        f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
@@ -2613,21 +2679,21 @@ async def cb_tgold_execute(query: CallbackQuery) -> None:
     await post_to_log_channel(query.bot, user_display, CATEGORY_TELEGRAM_OLD, country, price, phone, disc_pct)
 
     # Old accounts show only OTP, not session string
-    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
+    disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
-        f"🎉 <b>Purchase Successful!</b>\n\n"
-        f"📱 <b>Number:</b> <code>{phone}</code>\n"
-        f"🌍 <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
-        f"📅 <b>Year:</b> {year}\n"
-        f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country.title()}\n"
+        f"<tg-emoji emoji-id=\"5274055917766202507\">📅</tg-emoji> <b>Year:</b> {year}\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📋 <b>Next Steps:</b>\n"
+        f"<tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> <b>Next Steps:</b>\n"
         f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
         f"2️⃣ Enter the number: <code>{phone}</code>\n"
         f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"⚡ OTP is fetched <b>instantly</b> from the account!",
+        f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
@@ -2924,21 +2990,21 @@ async def cb_buynow_execute(query: CallbackQuery) -> None:
     else:
         session_line = ""
 
-    disc_line = f"🏷️ <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
+    disc_line = f"<tg-emoji emoji-id=\"5240228673738527951\">🏷️</tg-emoji> <b>Discount:</b> {disc_pct:.0f}% off\n" if disc_pct > 0 else ""
     await query.message.edit_text(
-        f"🎉 <b>Purchase Successful!</b>\n\n"
-        f"📱 <b>Number:</b> <code>{phone}</code>\n"
-        f"🌍 <b>Country:</b> {get_country_flag(country)} {country}\n"
-        f"💵 <b>Paid:</b> ${price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>Purchase Successful!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>Number:</b> <code>{phone}</code>\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> <b>Country:</b> {get_country_flag(country)} {country}\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> <b>Paid:</b> ${price:.2f} USDT\n"
         f"{disc_line}"
         f"{session_line}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>📋 Next Steps:</b>\n"
+        f"<b><tg-emoji emoji-id=\"5274055917766202507\">📋</tg-emoji> Next Steps:</b>\n"
         f"1️⃣ Open <b>Telegram / Telegram X / TurboTel</b>\n"
         f"2️⃣ Enter the number: <code>{phone}</code>\n"
         f"3️⃣ Tap <b>Send Code</b> in Telegram\n"
         f"4️⃣ Come back here and press <b>🔄 Get OTP</b>\n\n"
-        f"⚡ OTP is fetched <b>instantly</b> from the account!",
+        f"<tg-emoji emoji-id=\"5411590687663608498\">⚡</tg-emoji> OTP is fetched <b>instantly</b> from the account!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{pid}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="Main Menu", callback_data="back_main"), 'danger', "5416041192905265756")],
@@ -3077,10 +3143,10 @@ async def cb_referral(query: CallbackQuery) -> None:
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
 
     await query.message.edit_text(
-        f"🤝 <b>Your Referral Program</b>\n\n"
-        f"🔗 Your link:\n<code>{ref_link}</code>\n\n"
-        f"👥 Total referrals: <b>{len(referred_users)}</b>\n"
-        f"💵 Total earned: <b>${total_earned:.2f} USDT</b>\n\n"
+        f"<tg-emoji emoji-id=\"5253576920993388584\">🤝</tg-emoji> <b>Your Referral Program</b>\n\n"
+        f"<tg-emoji emoji-id=\"5305265301917549162\">🔗</tg-emoji> Your link:\n<code>{ref_link}</code>\n\n"
+        f"<tg-emoji emoji-id=\"5319175438268913255\">👥</tg-emoji> Total referrals: <b>{len(referred_users)}</b>\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> Total earned: <b>${total_earned:.2f} USDT</b>\n\n"
         f"Earn <b>{REFERRAL_COMMISSION_PCT}%</b> commission on every deposit "
         f"made by your referrals!",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -3377,15 +3443,25 @@ async def fsm_discount_min_deposit(message: Message, state: FSMContext) -> None:
 async def cb_admin_add_number(query: CallbackQuery, state: FSMContext) -> None:
     """Start add number flow - first select category."""
     await query.answer()
+    # Load custom categories from DB
+    async with AsyncSessionFactory() as session:
+        cc_rows = await session.execute(select(CustomCategory).order_by(CustomCategory.created_at))
+        custom_cats = cc_rows.scalars().all()
+
+    kb_rows = [
+        [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
+        [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
+        [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
+    ]
+    for cc in custom_cats:
+        kb_rows.append([apply_button_style(InlineKeyboardButton(text=cc.name, callback_data=f"admin_add_cat_{cc.slug}"), 'primary', "5197252827247841976")])
+    kb_rows.append([apply_button_style(InlineKeyboardButton(text="➕ Custom Category", callback_data="admin_add_custom_cat"), 'success', "5461151367559141950")])
+    kb_rows.append([apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756")])
+
     await query.message.edit_text(
         "➕ <b>Add New Number</b>\n\n"
         "Step 1/5: Select the <b>category</b>:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [apply_button_style(InlineKeyboardButton(text="Telegram Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_ACCOUNTS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Telegram Old Accounts", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_OLD}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Telegram Sessions", callback_data=f"admin_add_cat_{CATEGORY_TELEGRAM_SESSIONS}"), 'primary', "5197252827247841976")],
-            [apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_menu"), 'danger', "5416041192905265756")],
-        ]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3396,7 +3472,12 @@ async def cb_admin_add_category(query: CallbackQuery, state: FSMContext) -> None
     """Category selected, now ask for country (or year for old accounts)."""
     await query.answer()
     category = query.data.replace("admin_add_cat_", "")
-    category_name = PRODUCT_CATEGORIES.get(category, "Unknown")
+    category_name = PRODUCT_CATEGORIES.get(category)
+    if category_name is None:
+        async with AsyncSessionFactory() as session:
+            cc_res = await session.execute(select(CustomCategory).where(CustomCategory.slug == category))
+            cc = cc_res.scalar_one_or_none()
+            category_name = cc.name if cc else "Custom Category"
     
     await state.update_data(category=category)
 
@@ -3520,7 +3601,12 @@ async def fsm_add_session_string(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     session_str = message.text.strip()
     category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
-    category_name = PRODUCT_CATEGORIES.get(category, "Unknown")
+    category_name = PRODUCT_CATEGORIES.get(category)
+    if category_name is None:
+        async with AsyncSessionFactory() as session:
+            cc_res = await session.execute(select(CustomCategory).where(CustomCategory.slug == category))
+            cc = cc_res.scalar_one_or_none()
+            category_name = cc.name if cc else "Custom Category"
     
     async with AsyncSessionFactory() as session:
         product = Product(
@@ -3568,6 +3654,88 @@ async def cb_admin_cancel_add(query: CallbackQuery, state: FSMContext) -> None:
             reply_markup=build_admin_keyboard(),
             parse_mode=ParseMode.HTML,
         )
+
+
+@router.callback_query(F.data == "admin_add_custom_cat")
+@admin_only
+async def cb_admin_add_custom_cat(query: CallbackQuery, state: FSMContext) -> None:
+    """Start custom category creation flow."""
+    await query.answer()
+    await state.set_state(AdminCustomCategoryState.name)
+    await query.message.edit_text(
+        "➕ <b>Create Custom Category</b>\n\n"
+        "Enter the <b>category name</b>.\n"
+        "<i>⚠️ Keep it short — this exact name will appear as an inline button in the Buy Numbers menu.</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminCustomCategoryState.name)
+@admin_only
+async def fsm_custom_cat_name(message: Message, state: FSMContext) -> None:
+    """Store category name, ask for optional sub-menu name."""
+    name = message.text.strip()
+    if not name:
+        await message.answer("❌ Name cannot be empty. Please enter a category name:")
+        return
+    slug_suffix = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+    if not slug_suffix:
+        await message.answer("❌ Category name must contain at least one letter or digit. Please try again:")
+        return
+    slug = "custom_" + slug_suffix
+    await state.update_data(custom_cat_name=name, custom_cat_slug=slug)
+    await state.set_state(AdminCustomCategoryState.sub_name)
+    await message.answer(
+        f"✅ Category name set: <b>{name}</b>\n\n"
+        f"Now enter a <b>sub-menu button name</b> to display inside this category "
+        f"(e.g. <i>Buy {name}</i>), or send <b>0</b> to skip.\n\n"
+        f"<i>If you enter a name, tapping the category will first show that sub-button "
+        f"before listing countries.</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(AdminCustomCategoryState.sub_name)
+@admin_only
+async def fsm_custom_cat_sub_name(message: Message, state: FSMContext) -> None:
+    """Save custom category to DB, then continue to add number."""
+    raw = message.text.strip()
+    sub_name: str | None = None if raw == "0" else raw
+
+    data = await state.get_data()
+    name: str = data["custom_cat_name"]
+    slug: str = data["custom_cat_slug"]
+
+    async with AsyncSessionFactory() as session:
+        # Ensure slug uniqueness
+        existing = await session.execute(select(CustomCategory).where(CustomCategory.slug == slug))
+        if existing.scalar_one_or_none() is not None:
+            slug = slug + "_" + uuid.uuid4().hex[:8]
+        cc = CustomCategory(slug=slug, name=name, sub_name=sub_name)
+        session.add(cc)
+        await session.commit()
+
+    await state.update_data(category=slug)
+    await state.set_state(AdminAddNumber.country)
+
+    sub_label = sub_name if sub_name else "None (shows countries directly)"
+    await message.answer(
+        f"✅ <b>Custom Category Created!</b>\n\n"
+        f"📁 Name: <b>{name}</b>\n"
+        f"🔗 Sub-menu: <b>{sub_label}</b>\n\n"
+        f"Now continue adding the number.\n"
+        f"Step 2/5: Enter the <b>country name</b>:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            apply_button_style(InlineKeyboardButton(text="Cancel", callback_data="admin_cancel_add"), 'danger', "5416041192905265756"),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 # ── View / Remove Inventory ───────────────────────────────────────────────────
@@ -4814,7 +4982,7 @@ async def cb_my_purchases(query: CallbackQuery) -> None:
 
     if not orders:
         await query.message.edit_text(
-            "📦 You haven't purchased any numbers yet.",
+            "<tg-emoji emoji-id=\"5406683434124859552\">📦</tg-emoji> You haven't purchased any numbers yet.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756"),
             ]]),
@@ -4833,7 +5001,7 @@ async def cb_my_purchases(query: CallbackQuery) -> None:
     buttons.append([apply_button_style(InlineKeyboardButton(text="Back", callback_data="back_main"), 'danger', "5416041192905265756")])
 
     await query.message.edit_text(
-        "📦 <b>My Purchases</b>\n\n✅ = OTP received  ⏳ = Waiting for OTP",
+        "<tg-emoji emoji-id=\"5406683434124859552\">📦</tg-emoji> <b>My Purchases</b>\n\n<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> = OTP received  <tg-emoji emoji-id=\"5458603043203327669\">⏳</tg-emoji> = Waiting for OTP",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode=ParseMode.HTML,
     )
@@ -4870,12 +5038,12 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
 
     dt = o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "N/A"
     if p.latest_otp:
-        otp_line = f"✅ <b>OTP Received:</b> <code>{p.latest_otp}</code>"
+        otp_line = f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>OTP Received:</b> <code>{p.latest_otp}</code>"
         kb_rows = [
             [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
         ]
     else:
-        otp_line = "⏳ OTP not received yet."
+        otp_line = "<tg-emoji emoji-id=\"5458603043203327669\">⏳</tg-emoji> OTP not received yet."
         kb_rows = [
             [apply_button_style(InlineKeyboardButton(text="Get OTP", callback_data=f"getotp_{p.id}"), 'primary', "5449569374065152798")],
             [apply_button_style(InlineKeyboardButton(text="My Purchases", callback_data="my_purchases"), 'danger', "5406683434124859552")],
@@ -4888,10 +5056,10 @@ async def cb_purchase_detail(query: CallbackQuery) -> None:
         sess_line = ""
 
     await query.message.edit_text(
-        f"📱 <b>{p.phone_number}</b>\n"
-        f"🌍 Country: {get_country_flag(p.country)} {p.country}\n"
-        f"💵 Price Paid: ${p.price:.2f} USDT\n"
-        f"📅 Purchased: {dt}\n\n"
+        f"<tg-emoji emoji-id=\"5197252827247841976\">📱</tg-emoji> <b>{p.phone_number}</b>\n"
+        f"<tg-emoji emoji-id=\"5460755126761312667\">🌍</tg-emoji> Country: {get_country_flag(p.country)} {p.country}\n"
+        f"<tg-emoji emoji-id=\"5409048419211682843\">💵</tg-emoji> Price Paid: ${p.price:.2f} USDT\n"
+        f"<tg-emoji emoji-id=\"5274055917766202507\">📅</tg-emoji> Purchased: {dt}\n\n"
         f"{otp_line}"
         f"{sess_line}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
