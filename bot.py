@@ -1754,7 +1754,7 @@ async def get_applicable_discount(session: AsyncSession, user_id: int, total_dep
     return Decimal("0")
 
 
-async def post_to_log_channel(bot: Bot, user_display: str, category: str, country: str, price: Decimal, phone_number: str, discount_pct: Decimal = Decimal("0"), user_id=None, total_deposited: Decimal = Decimal("0")) -> None:
+async def post_to_log_channel(bot: Bot, user_display: str, category: str, country: str, price: Decimal, phone_number: str, discount_pct: Decimal = Decimal("0"), user_id: Optional[int] = None, total_deposited: Decimal = Decimal("0")) -> None:
     """Post purchase details to the log channel if configured."""
     if not LOG_CHANNEL:
         return
@@ -3091,7 +3091,7 @@ async def fsm_prem_fulfill_twofa(message: Message, state: FSMContext) -> None:
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"<tg-emoji emoji-id='5274055917766202507'>📋</tg-emoji> <b>Next Steps:</b>\n"
             f"<tg-emoji emoji-id='5382322671679708881'>1️⃣</tg-emoji> Open Telegram / Telegram X / TurboTel\n"
-            f"<tg-emoji emoji-id='5381990043642502553'>2️⃣</tg-emoji> Enter the number: {phone}\n"
+            f"<tg-emoji emoji-id='5381990043642502553'>2️⃣</tg-emoji> Enter the number: <code>{phone}</code>\n"
             f"<tg-emoji emoji-id='5381879959335738545'>3️⃣</tg-emoji> Tap Send Code in Telegram\n"
             f"<tg-emoji emoji-id='5382054253403577563'>4️⃣</tg-emoji> Come back here and press 🔄 Get OTP\n\n"
             f"<tg-emoji emoji-id='5411590687663608498'>⚡</tg-emoji> OTP is fetched instantly from the account!",
@@ -4109,7 +4109,12 @@ async def fsm_add_twofa_password(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     session_str = data.get("session_string", "")
     if not session_str:
-        await message.answer("❌ Session string is missing. Please restart the add number flow.")
+        await message.answer(
+            "❌ Session string is missing. This can happen if the FSM state expired.\n"
+            "Please restart the add number flow from the Admin Panel.",
+            reply_markup=build_admin_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
         await state.clear()
         return
     category = data.get("category", CATEGORY_TELEGRAM_ACCOUNTS)
