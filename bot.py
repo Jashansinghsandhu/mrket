@@ -3726,9 +3726,9 @@ async def fsm_custom_cat_sub_name(message: Message, state: FSMContext) -> None:
 
     sub_label = sub_name if sub_name else "None (shows countries directly)"
     await message.answer(
-        f"✅ <b>Custom Category Created!</b>\n\n"
-        f"📁 Name: <b>{name}</b>\n"
-        f"🔗 Sub-menu: <b>{sub_label}</b>\n\n"
+        f"<tg-emoji emoji-id=\"5206607081334906820\">✅</tg-emoji> <b>Custom Category Created!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5305265301917549162\">📁</tg-emoji> Name: <b>{name}</b>\n"
+        f"<tg-emoji emoji-id=\"5305265301917549162\">🔗</tg-emoji> Sub-menu: <b>{sub_label}</b>\n\n"
         f"Now continue adding the number.\n"
         f"Step 2/5: Enter the <b>country name</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
